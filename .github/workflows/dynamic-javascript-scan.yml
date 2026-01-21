@@ -138,26 +138,34 @@ jobs:
             if (fs.existsSync(reportDir + '/eslint.json')) {
                 console.log('Found eslint.json');
                 const eslintData = JSON.parse(fs.readFileSync(reportDir + '/eslint.json', 'utf8'));
-                console.log('ESLint data length:', eslintData.length);
-                eslintData.forEach(result => {
-                    if (result.severity === 2) { // error
-                        severitySummary.high.push({
-                            'tool': 'eslint',
-                            'file': result.filePath,
-                            'line': result.lineNumber,
-                            'issue': result.ruleId,
-                            'message': result.message || 'ESLint error'
-                        });
-                    } else if (result.severity === 1) { // warning
-                        severitySummary.medium.push({
-                            'tool': 'eslint',
-                            'file': result.filePath,
-                            'line': result.lineNumber,
-                            'issue': result.ruleId,
-                            'message': result.message || 'ESLint warning'
-                        });
-                    }
-                });
+                console.log('ESLint raw data:', JSON.stringify(eslintData, null, 2));
+                console.log('ESLint data type:', typeof eslintData);
+                console.log('ESLint is array:', Array.isArray(eslintData));
+                
+                if (Array.isArray(eslintData) && eslintData.length > 0) {
+                    console.log('Processing ESLint results...');
+                    eslintData.forEach(result => {
+                        if (result.severity === 2) { // error
+                            severitySummary.high.push({
+                                'tool': 'eslint',
+                                'file': result.filePath,
+                                'line': result.lineNumber,
+                                'issue': result.ruleId,
+                                'message': result.message || 'ESLint error'
+                            });
+                        } else if (result.severity === 1) { // warning
+                            severitySummary.medium.push({
+                                'tool': 'eslint',
+                                'file': result.filePath,
+                                'line': result.lineNumber,
+                                'issue': result.ruleId,
+                                'message': result.message || 'ESLint warning'
+                            });
+                        }
+                    });
+                } else {
+                    console.log('ESLint data is empty or not an array');
+                }
             } else {
                 console.log('eslint.json not found');
             }
@@ -171,17 +179,25 @@ jobs:
             if (fs.existsSync(reportDir + '/plato/report.json')) {
                 console.log('Found plato/report.json');
                 const platoData = JSON.parse(fs.readFileSync(reportDir + '/plato/report.json', 'utf8'));
-                Object.keys(platoData.reports).forEach(file => {
-                    const report = platoData.reports[file];
-                    if (report.complexity && report.complexity.aggregate.complexity.cyclomatic > 10) {
-                        severitySummary.medium.push({
-                            'tool': 'plato',
-                            'file': file,
-                            'issue': 'High complexity',
-                            'message': 'Cyclomatic complexity: ' + report.complexity.aggregate.complexity.cyclomatic
-                        });
-                    }
-                });
+                console.log('Plato raw data:', JSON.stringify(platoData, null, 2));
+                console.log('Plato data type:', typeof platoData);
+                
+                if (platoData && platoData.reports) {
+                    console.log('Processing Plato results...');
+                    Object.keys(platoData.reports).forEach(file => {
+                        const report = platoData.reports[file];
+                        if (report.complexity && report.complexity.aggregate && report.complexity.aggregate.complexity.cyclomatic > 10) {
+                            severitySummary.medium.push({
+                                'tool': 'plato',
+                                'file': file,
+                                'issue': 'High complexity',
+                                'message': 'Cyclomatic complexity: ' + report.complexity.aggregate.complexity.cyclomatic
+                            });
+                        }
+                    });
+                } else {
+                    console.log('Plato data is empty or missing reports');
+                }
             } else {
                 console.log('plato/report.json not found');
             }
