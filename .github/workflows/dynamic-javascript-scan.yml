@@ -52,6 +52,37 @@ jobs:
       run: |
         echo '{"critical": [], "high": [], "medium": [], "low": [], "info": []}' > $REPORT_DIR/severity_summary.json
         
+    - name: Debug scan results
+      run: |
+        echo "=== DEBUG: Check scan results ==="
+        echo "Report directory contents:"
+        ls -la $REPORT_DIR/
+        echo ""
+        echo "=== ESLint results ==="
+        if [ -f "$REPORT_DIR/eslint.json" ]; then
+          echo "ESLint file exists:"
+          cat $REPORT_DIR/eslint.json
+        else
+          echo "ESLint file NOT found"
+        fi
+        echo ""
+        echo "=== Plato results ==="
+        if [ -f "$REPORT_DIR/plato/report.json" ]; then
+          echo "Plato file exists:"
+          cat $REPORT_DIR/plato/report.json
+        else
+          echo "Plato file NOT found"
+          echo "Plato directory contents:"
+          ls -la $REPORT_DIR/plato/ 2>/dev/null || echo "Plato directory not found"
+        fi
+        echo ""
+        echo "=== Severity summary before processing ==="
+        if [ -f "$REPORT_DIR/severity_summary.json" ]; then
+          cat $REPORT_DIR/severity_summary.json
+        else
+          echo "Severity summary file NOT found"
+        fi
+        
     - name: Run JavaScript processing script
       run: |
         node << 'SCRIPT_EOF'
@@ -242,7 +273,19 @@ jobs:
         console.log('Final severity summary:', JSON.stringify(severitySummary, null, 2));
         fs.writeFileSync(reportDir + '/severity_summary.json', JSON.stringify(severitySummary, null, 2));
         console.log("JavaScript severity summary generated successfully");
+        console.log('=== FINAL DEBUG: severity_summary.json contents ===');
+        console.log(fs.readFileSync(reportDir + '/severity_summary.json', 'utf8'));
         SCRIPT_EOF
+        
+    - name: Debug final results
+      run: |
+        echo "=== DEBUG: Final severity summary ==="
+        if [ -f "$REPORT_DIR/severity_summary.json" ]; then
+          echo "Final severity summary file contents:"
+          cat $REPORT_DIR/severity_summary.json
+        else
+          echo "Final severity summary file NOT found"
+        fi
         
     - name: Upload scan reports
       uses: actions/upload-artifact@v4
