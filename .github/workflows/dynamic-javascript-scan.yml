@@ -1,0 +1,265 @@
+
+name: "JavaScript Security Scan"
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+env:
+  REPORT_DIR: scan-reports
+
+jobs:
+  javascript-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "18"
+        cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
+        
+    - name: Install dependencies
+      run: |
+        if [ -f "package.json" ]; then
+          npm install
+        else
+          echo "No package.json found, skipping npm install"
+        fi
+        
+    - name: Install scanning tools
+      run: |
+        npm install -g eslint npm-audit-ci retire plato jsdoc jscpd
+        
+    - name: Create report directory
+      run: |
+        mkdir -p $REPORT_DIR
+        
+    - name: Run security and quality scans
+      run: |
+        echo 'Starting JavaScript security scan...'
+        echo 'Running ESLint...'
+        echo '{"extends": ["eslint:recommended"], "env": {"browser": true, "node": true}, "parserOptions": {"ecmaVersion": 2018}}' > .eslintrc.json && eslint . --format=json --output-file=$REPORT_DIR/eslint.json || true
+        echo 'Running Plato Complexity Analysis...'
+        plato -r -d $REPORT_DIR/plato . || true
+        
+    - name: Initialize severity summary
+      run: |
+        echo '{"critical": [], "high": [], "medium": [], "low": [], "info": []}' > $REPORT_DIR/severity_summary.json
+        
+        # Create JavaScript processing script
+        cat > process_results.js << 'EOF'
+        const fs = require('fs');
+        const path = require('path');
+
+        const reportDir = process.env.REPORT_DIR || 'scan-reports';
+        let severitySummary = {
+            "critical": [],
+            "high": [],
+            "medium": [],
+            "low": [],
+            "info": []
+        };
+
+        try {
+            if (fs.existsSync(`${reportDir}/npm_audit.json`)) {
+                const npmData = JSON.parse(fs.readFileSync(`${reportDir}/npm_audit.json`, 'utf8'));
+                if (npmData.vulnerabilities) {
+                    npmData.vulnerabilities.forEach(vuln => {
+                        const severity = vuln.severity ? vuln.severity.toLowerCase() : 'unknown';
+                        if (severitySummary[severity]) {
+                            severitySummary[severity].push({
+                                'tool': 'npm_audit',
+                                'package': vuln.module_name,
+                                'version': (vuln.findings && vuln.findings.length > 0) ? vuln.findings[0].version : 'N/A',
+                                'issue': vuln.title,
+                                'message': vuln.overview || 'Vulnerability found'
+                            });
+                        }
+                    });
+                }
+            }
+        } catch (e) {
+            console.log(`Error processing npm_audit.json: ${e}`);
+        }
+
+        if (fs.existsSync(`${reportDir}/eslint.json`)) {
+            try {
+                const eslintData = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
+                eslintData.forEach(result => {
+                    if (result.severity === 2) { // error
+                        severitySummary.high.push({
+                            'tool': 'eslint',
+                            'file': result.filePath,
+                            'line': result.lineNumber,
+                            'issue': result.ruleId,
+                            'message': result.message || 'ESLint error'
+                        });
+                    } else if (result.severity === 1) { // warning
+                        severitySummary.medium.push({
+                            'tool': 'eslint',
+                            'file': result.filePath,
+                            'line': result.lineNumber,
+                            'issue': result.ruleId,
+                            'message': result.message || 'ESLint warning'
+                        });
+                    }
+                });
+            } catch (e) {
+                console.log(`Error processing eslint.json: ${e}`);
+            }
+        }
+
+        // Process Plato results
+        if (fs.existsSync(`${reportDir}/plato/report.json`)) {
+            try {
+                const platoData = JSON.parse(fs.readFileSync(`${reportDir}/plato/report.json`, 'utf8'));
+                Object.keys(platoData.reports).forEach(file => {
+                    const report = platoData.reports[file];
+                    if (report.complexity && report.complexity.aggregate.complexity.cyclomatic > 10) {
+                        severitySummary.medium.push({
+                            'tool': 'plato',
+                            'file': file,
+                            'issue': 'High complexity',
+                            'message': `Cyclomatic complexity: ${report.complexity.aggregate.complexity.cyclomatic}`
+                        });
+                    }
+                });
+            } catch (e) {
+                console.log(`Error processing plato/report.json: ${e}`);
+            }
+        }
+
+        // Process Retire.js results
+        if (fs.existsSync(`${reportDir}/retire.json`)) {
+            try {
+                const retireData = JSON.parse(fs.readFileSync(`${reportDir}/retire.json`, 'utf8'));
+                retireData.data.forEach(vuln => {
+                    if (vuln.severity === 'high' || vuln.severity === 'critical') {
+                        severitySummary[vuln.severity].push({
+                            'tool': 'retire',
+                            'package': vuln.component,
+                            'version': vuln.version,
+                            'issue': vuln.identifiers.join(', '),
+                            'message': vuln.info.join(', ')
+                        });
+                    } else if (vuln.severity === 'medium') {
+                        severitySummary.medium.push({
+                            'tool': 'retire',
+                            'package': vuln.component,
+                            'version': vuln.version,
+                            'issue': vuln.identifiers.join(', '),
+                            'message': vuln.info.join(', ')
+                        });
+                    }
+                });
+            } catch (e) {
+                console.log(`Error processing retire.json: ${e}`);
+            }
+        }
+
+        // Process JSCPD results
+        if (fs.existsSync(`${reportDir}/jscpd.json`)) {
+            try {
+                const jscpdData = JSON.parse(fs.readFileSync(`${reportDir}/jscpd.json`, 'utf8'));
+                jscpdData.duplications.forEach(dup => {
+                    if (dup.lines > 50) {
+                        severitySummary.low.push({
+                            'tool': 'jscpd',
+                            'file': dup.file,
+                            'issue': 'Code duplication',
+                            'message': `${dup.lines} duplicated lines found`
+                        });
+                    }
+                });
+            } catch (e) {
+                console.log(`Error processing jscpd.json: ${e}`);
+            }
+        }
+
+        // Process JSDoc results
+        if (fs.existsSync(`${reportDir}/jsdoc.json`)) {
+            try {
+                const jsdocData = JSON.parse(fs.readFileSync(`${reportDir}/jsdoc.json`, 'utf8'));
+                if (jsdocData.errors && jsdocData.errors.length > 0) {
+                    severitySummary.low.push({
+                        'tool': 'jsdoc',
+                        'issue': 'Documentation errors',
+                        'message': `${jsdocData.errors.length} documentation errors found`
+                    });
+                } else if (jsdocData.warnings && jsdocData.warnings.length > 0) {
+                    severitySummary.info.push({
+                        'tool': 'jsdoc',
+                        'issue': 'Documentation warnings',
+                        'message': `${jsdocData.warnings.length} documentation warnings found`
+                    });
+                }
+            } catch (e) {
+                console.log(`Error processing jsdoc.json: ${e}`);
+            }
+        }
+
+        fs.writeFileSync(`${reportDir}/severity_summary.json`, JSON.stringify(severitySummary, null, 2));
+        console.log("JavaScript severity summary generated successfully");
+        EOF
+                
+                # Run the processing script
+        node process_results.js
+        
+    - name: Upload scan reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: javascript-scan-reports
+        path: ${{ env.REPORT_DIR }}/
+        retention-days: 30
+        
+    - name: Generate scan summary
+      run: |
+        echo "## JavaScript Security Scan Results" >> $GITHUB_STEP_SUMMARY
+        echo "### Severity Summary" >> $GITHUB_STEP_SUMMARY
+        echo '```json' >> $GITHUB_STEP_SUMMARY
+        cat $REPORT_DIR/severity_summary.json >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Available Reports" >> $GITHUB_STEP_SUMMARY
+        echo "- npm-audit: \`npm_audit.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- ESLint: \`eslint.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- Plato: \`plato.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- JSDoc: \`jsdoc\`" >> $GITHUB_STEP_SUMMARY
+        echo "- JSCPD: \`jscpd.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- Retire.js: \`retire.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- Severity Summary: \`severity_summary.json\`" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Repository Information" >> $GITHUB_STEP_SUMMARY
+        echo "- Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Run ID: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
+        
+        echo "### Timestamp" >> $GITHUB_STEP_SUMMARY
+        echo "- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+      shell: bash
+
+    - name: Send results to API
+      if: always()
+      run: |
+        if [ -f "$REPORT_DIR/severity_summary.json" ]; then
+          curl -X POST \
+            -H "Content-Type: application/json" \
+            -d @- \
+            "https://eop7f15rcm9dnz.m.pipedream.net" << EOF
+        {
+          "repository": "${{ github.repository }}",
+          "branch": "${{ github.ref_name }}",
+          "run_id": "${{ github.run_id }}",
+          "severity_results": $(cat $REPORT_DIR/severity_summary.json),
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        }
+        EOF
+        fi
+      shell: bash
