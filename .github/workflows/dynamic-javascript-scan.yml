@@ -54,7 +54,7 @@ jobs:
         
     - name: Run JavaScript processing script
       run: |
-        cat > process_script.js << 'SCRIPT_EOF'
+        node << 'SCRIPT_EOF'
         const fs = require('fs');
         const path = require('path');
 
@@ -68,8 +68,8 @@ jobs:
         };
 
         try {
-            if (fs.existsSync('${reportDir}/npm_audit.json')) {
-                const npmData = JSON.parse(fs.readFileSync('${reportDir}/npm_audit.json', 'utf8'));
+            if (fs.existsSync(reportDir + '/npm_audit.json')) {
+                const npmData = JSON.parse(fs.readFileSync(reportDir + '/npm_audit.json', 'utf8'));
                 if (npmData.vulnerabilities) {
                     npmData.vulnerabilities.forEach(vuln => {
                         const severity = vuln.severity ? vuln.severity.toLowerCase() : 'unknown';
@@ -89,9 +89,9 @@ jobs:
             console.log('Error processing npm_audit.json: ' + e);
         }
 
-        if (fs.existsSync('${reportDir}/eslint.json')) {
+        if (fs.existsSync(reportDir + '/eslint.json')) {
             try {
-                const eslintData = JSON.parse(fs.readFileSync('${reportDir}/eslint.json', 'utf8'));
+                const eslintData = JSON.parse(fs.readFileSync(reportDir + '/eslint.json', 'utf8'));
                 eslintData.forEach(result => {
                     if (result.severity === 2) { // error
                         severitySummary.high.push({
@@ -117,9 +117,9 @@ jobs:
         }
 
         // Process Plato results
-        if (fs.existsSync('${reportDir}/plato/report.json')) {
+        if (fs.existsSync(reportDir + '/plato/report.json')) {
             try {
-                const platoData = JSON.parse(fs.readFileSync('${reportDir}/plato/report.json', 'utf8'));
+                const platoData = JSON.parse(fs.readFileSync(reportDir + '/plato/report.json', 'utf8'));
                 Object.keys(platoData.reports).forEach(file => {
                     const report = platoData.reports[file];
                     if (report.complexity && report.complexity.aggregate.complexity.cyclomatic > 10) {
@@ -137,9 +137,9 @@ jobs:
         }
 
         // Process Retire.js results
-        if (fs.existsSync('${reportDir}/retire.json')) {
+        if (fs.existsSync(reportDir + '/retire.json')) {
             try {
-                const retireData = JSON.parse(fs.readFileSync('${reportDir}/retire.json', 'utf8'));
+                const retireData = JSON.parse(fs.readFileSync(reportDir + '/retire.json', 'utf8'));
                 retireData.data.forEach(vuln => {
                     if (vuln.severity === 'high' || vuln.severity === 'critical') {
                         severitySummary[vuln.severity].push({
@@ -165,9 +165,9 @@ jobs:
         }
 
         // Process JSCPD results
-        if (fs.existsSync('${reportDir}/jscpd.json')) {
+        if (fs.existsSync(reportDir + '/jscpd.json')) {
             try {
-                const jscpdData = JSON.parse(fs.readFileSync('${reportDir}/jscpd.json', 'utf8'));
+                const jscpdData = JSON.parse(fs.readFileSync(reportDir + '/jscpd.json', 'utf8'));
                 jscpdData.duplications.forEach(dup => {
                     if (dup.lines > 50) {
                         severitySummary.low.push({
@@ -184,9 +184,9 @@ jobs:
         }
 
         // Process JSDoc results
-        if (fs.existsSync('${reportDir}/jsdoc.json')) {
+        if (fs.existsSync(reportDir + '/jsdoc.json')) {
             try {
-                const jsdocData = JSON.parse(fs.readFileSync('${reportDir}/jsdoc.json', 'utf8'));
+                const jsdocData = JSON.parse(fs.readFileSync(reportDir + '/jsdoc.json', 'utf8'));
                 if (jsdocData.errors && jsdocData.errors.length > 0) {
                     severitySummary.low.push({
                         'tool': 'jsdoc',
@@ -205,11 +205,9 @@ jobs:
             }
         }
 
-        fs.writeFileSync('${reportDir}/severity_summary.json', JSON.stringify(severitySummary, null, 2));
+        fs.writeFileSync(reportDir + '/severity_summary.json', JSON.stringify(severitySummary, null, 2));
         console.log("JavaScript severity summary generated successfully");
         SCRIPT_EOF
-        
-        node process_script.js
         
     - name: Upload scan reports
       uses: actions/upload-artifact@v4
