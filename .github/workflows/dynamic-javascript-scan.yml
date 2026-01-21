@@ -70,10 +70,27 @@ jobs:
         };
         
         // Process ESLint results
+        console.log('=== DEBUG: Processing ESLint ===');
+        console.log('Report directory:', reportDir);
+        console.log('Files in report directory:');
+        try {
+            const files = fs.readdirSync(reportDir);
+            console.log(files);
+        } catch (e) {
+            console.log('Error reading directory:', e);
+        }
+        
         if (fs.existsSync(reportDir + '/eslint.json')) {
+            console.log('ESLint file exists');
             try {
                 const eslintData = JSON.parse(fs.readFileSync(reportDir + '/eslint.json', 'utf8'));
+                console.log('ESLint raw data:', JSON.stringify(eslintData, null, 2));
+                console.log('ESLint data type:', typeof eslintData);
+                console.log('ESLint is array:', Array.isArray(eslintData));
+                console.log('ESLint length:', eslintData ? eslintData.length : 'N/A');
+                
                 if (Array.isArray(eslintData) && eslintData.length > 0) {
+                    console.log('Processing ESLint results...');
                     eslintData.forEach(result => {
                         if (result.severity === 2) {
                             severitySummary.high.push({
@@ -93,10 +110,14 @@ jobs:
                             });
                         }
                     });
+                } else {
+                    console.log('ESLint data is empty or not an array');
                 }
             } catch (e) {
                 console.log('Error processing eslint.json: ' + e);
             }
+        } else {
+            console.log('ESLint file does NOT exist');
         }
         
         // Process Plato results
@@ -219,6 +240,8 @@ jobs:
         
         fs.writeFileSync(reportDir + '/severity_summary.json', JSON.stringify(severitySummary, null, 2));
         console.log("JavaScript severity summary generated successfully");
+        console.log('=== DEBUG: Final severity summary ===');
+        console.log(JSON.stringify(severitySummary, null, 2));
         SCRIPT_EOF
         
     - name: Upload scan reports
