@@ -68,8 +68,8 @@ jobs:
         };
 
         try {
-            if (fs.existsSync(\`\${reportDir}/npm_audit.json\`)) {
-                const npmData = JSON.parse(fs.readFileSync(\`\${reportDir}/npm_audit.json\`, 'utf8'));
+            if (fs.existsSync('${reportDir}/npm_audit.json')) {
+                const npmData = JSON.parse(fs.readFileSync('${reportDir}/npm_audit.json', 'utf8'));
                 if (npmData.vulnerabilities) {
                     npmData.vulnerabilities.forEach(vuln => {
                         const severity = vuln.severity ? vuln.severity.toLowerCase() : 'unknown';
@@ -86,12 +86,12 @@ jobs:
                 }
             }
         } catch (e) {
-            console.log(\`Error processing npm_audit.json: \${e}\`);
+            console.log('Error processing npm_audit.json: ' + e);
         }
 
-        if (fs.existsSync(\`\${reportDir}/eslint.json\`)) {
+        if (fs.existsSync('${reportDir}/eslint.json')) {
             try {
-                const eslintData = JSON.parse(fs.readFileSync(\`\${reportDir}/eslint.json\`, 'utf8'));
+                const eslintData = JSON.parse(fs.readFileSync('${reportDir}/eslint.json', 'utf8'));
                 eslintData.forEach(result => {
                     if (result.severity === 2) { // error
                         severitySummary.high.push({
@@ -112,14 +112,14 @@ jobs:
                     }
                 });
             } catch (e) {
-                console.log(\`Error processing eslint.json: \${e}\`);
+                console.log('Error processing eslint.json: ' + e);
             }
         }
 
         // Process Plato results
-        if (fs.existsSync(\`\${reportDir}/plato/report.json\`)) {
+        if (fs.existsSync('${reportDir}/plato/report.json')) {
             try {
-                const platoData = JSON.parse(fs.readFileSync(\`\${reportDir}/plato/report.json\`, 'utf8'));
+                const platoData = JSON.parse(fs.readFileSync('${reportDir}/plato/report.json', 'utf8'));
                 Object.keys(platoData.reports).forEach(file => {
                     const report = platoData.reports[file];
                     if (report.complexity && report.complexity.aggregate.complexity.cyclomatic > 10) {
@@ -127,19 +127,19 @@ jobs:
                             'tool': 'plato',
                             'file': file,
                             'issue': 'High complexity',
-                            'message': \`Cyclomatic complexity: \${report.complexity.aggregate.complexity.cyclomatic}\`
+                            'message': 'Cyclomatic complexity: ' + report.complexity.aggregate.complexity.cyclomatic
                         });
                     }
                 });
             } catch (e) {
-                console.log(\`Error processing plato/report.json: \${e}\`);
+                console.log('Error processing plato/report.json: ' + e);
             }
         }
 
         // Process Retire.js results
-        if (fs.existsSync(\`\${reportDir}/retire.json\`)) {
+        if (fs.existsSync('${reportDir}/retire.json')) {
             try {
-                const retireData = JSON.parse(fs.readFileSync(\`\${reportDir}/retire.json\`, 'utf8'));
+                const retireData = JSON.parse(fs.readFileSync('${reportDir}/retire.json', 'utf8'));
                 retireData.data.forEach(vuln => {
                     if (vuln.severity === 'high' || vuln.severity === 'critical') {
                         severitySummary[vuln.severity].push({
@@ -160,52 +160,52 @@ jobs:
                     }
                 });
             } catch (e) {
-                console.log(\`Error processing retire.json: \${e}\`);
+                console.log('Error processing retire.json: ' + e);
             }
         }
 
         // Process JSCPD results
-        if (fs.existsSync(\`\${reportDir}/jscpd.json\`)) {
+        if (fs.existsSync('${reportDir}/jscpd.json')) {
             try {
-                const jscpdData = JSON.parse(fs.readFileSync(\`\${reportDir}/jscpd.json\`, 'utf8'));
+                const jscpdData = JSON.parse(fs.readFileSync('${reportDir}/jscpd.json', 'utf8'));
                 jscpdData.duplications.forEach(dup => {
                     if (dup.lines > 50) {
                         severitySummary.low.push({
                             'tool': 'jscpd',
                             'file': dup.file,
                             'issue': 'Code duplication',
-                            'message': \`\${dup.lines} duplicated lines found\`
+                            'message': dup.lines + ' duplicated lines found'
                         });
                     }
                 });
             } catch (e) {
-                console.log(\`Error processing jscpd.json: \${e}\`);
+                console.log('Error processing jscpd.json: ' + e);
             }
         }
 
         // Process JSDoc results
-        if (fs.existsSync(\`\${reportDir}/jsdoc.json\`)) {
+        if (fs.existsSync('${reportDir}/jsdoc.json')) {
             try {
-                const jsdocData = JSON.parse(fs.readFileSync(\`\${reportDir}/jsdoc.json\`, 'utf8'));
+                const jsdocData = JSON.parse(fs.readFileSync('${reportDir}/jsdoc.json', 'utf8'));
                 if (jsdocData.errors && jsdocData.errors.length > 0) {
                     severitySummary.low.push({
                         'tool': 'jsdoc',
                         'issue': 'Documentation errors',
-                        'message': \`\${jsdocData.errors.length} documentation errors found\`
+                        'message': jsdocData.errors.length + ' documentation errors found'
                     });
                 } else if (jsdocData.warnings && jsdocData.warnings.length > 0) {
                     severitySummary.info.push({
                         'tool': 'jsdoc',
                         'issue': 'Documentation warnings',
-                        'message': \`\${jsdocData.warnings.length} documentation warnings found\`
+                        'message': jsdocData.warnings.length + ' documentation warnings found'
                     });
                 }
             } catch (e) {
-                console.log(\`Error processing jsdoc.json: \${e}\`);
+                console.log('Error processing jsdoc.json: ' + e);
             }
         }
 
-        fs.writeFileSync(\`\${reportDir}/severity_summary.json\`, JSON.stringify(severitySummary, null, 2));
+        fs.writeFileSync('${reportDir}/severity_summary.json', JSON.stringify(severitySummary, null, 2));
         console.log("JavaScript severity summary generated successfully");
         SCRIPT_EOF
         
@@ -223,18 +223,18 @@ jobs:
       run: |
         echo "## JavaScript Security Scan Results" >> $GITHUB_STEP_SUMMARY
         echo "### Severity Summary" >> $GITHUB_STEP_SUMMARY
-        echo '```json' >> $GITHUB_STEP_SUMMARY
+        echo "'json'" >> $GITHUB_STEP_SUMMARY
         cat $REPORT_DIR/severity_summary.json >> $GITHUB_STEP_SUMMARY
-        echo '```' >> $GITHUB_STEP_SUMMARY
+        echo "'json'" >> $GITHUB_STEP_SUMMARY
         
         echo "### Available Reports" >> $GITHUB_STEP_SUMMARY
-        echo "- npm-audit: \`npm_audit.json\`" >> $GITHUB_STEP_SUMMARY
-        echo "- ESLint: \`eslint.json\`" >> $GITHUB_STEP_SUMMARY
-        echo "- Plato: \`plato.json\`" >> $GITHUB_STEP_SUMMARY
-        echo "- JSDoc: \`jsdoc\`" >> $GITHUB_STEP_SUMMARY
-        echo "- JSCPD: \`jscpd.json\`" >> $GITHUB_STEP_SUMMARY
-        echo "- Retire.js: \`retire.json\`" >> $GITHUB_STEP_SUMMARY
-        echo "- Severity Summary: \`severity_summary.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- npm-audit: 'npm_audit.json'" >> $GITHUB_STEP_SUMMARY
+        echo "- ESLint: 'eslint.json'" >> $GITHUB_STEP_SUMMARY
+        echo "- Plato: 'plato.json'" >> $GITHUB_STEP_SUMMARY
+        echo "- JSDoc: 'jsdoc'" >> $GITHUB_STEP_SUMMARY
+        echo "- JSCPD: 'jscpd.json'" >> $GITHUB_STEP_SUMMARY
+        echo "- Retire.js: 'retire.json'" >> $GITHUB_STEP_SUMMARY
+        echo "- Severity Summary: 'severity_summary.json'" >> $GITHUB_STEP_SUMMARY
         
         echo "### Repository Information" >> $GITHUB_STEP_SUMMARY
         echo "- Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
