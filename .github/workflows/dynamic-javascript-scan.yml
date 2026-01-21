@@ -67,8 +67,19 @@ jobs:
             "info": []
         };
 
+        console.log('Report directory:', reportDir);
+        console.log('Files in report directory:');
         try {
+            const files = fs.readdirSync(reportDir);
+            console.log(files);
+        } catch (e) {
+            console.log('Error reading directory:', e);
+        }
+
+        try {
+            console.log('Checking npm_audit.json...');
             if (fs.existsSync(reportDir + '/npm_audit.json')) {
+                console.log('Found npm_audit.json');
                 const npmData = JSON.parse(fs.readFileSync(reportDir + '/npm_audit.json', 'utf8'));
                 if (npmData.vulnerabilities) {
                     npmData.vulnerabilities.forEach(vuln => {
@@ -84,14 +95,19 @@ jobs:
                         }
                     });
                 }
+            } else {
+                console.log('npm_audit.json not found');
             }
         } catch (e) {
             console.log('Error processing npm_audit.json: ' + e);
         }
 
-        if (fs.existsSync(reportDir + '/eslint.json')) {
-            try {
+        try {
+            console.log('Checking eslint.json...');
+            if (fs.existsSync(reportDir + '/eslint.json')) {
+                console.log('Found eslint.json');
                 const eslintData = JSON.parse(fs.readFileSync(reportDir + '/eslint.json', 'utf8'));
+                console.log('ESLint data length:', eslintData.length);
                 eslintData.forEach(result => {
                     if (result.severity === 2) { // error
                         severitySummary.high.push({
@@ -111,14 +127,18 @@ jobs:
                         });
                     }
                 });
-            } catch (e) {
-                console.log('Error processing eslint.json: ' + e);
+            } else {
+                console.log('eslint.json not found');
             }
+        } catch (e) {
+            console.log('Error processing eslint.json: ' + e);
         }
 
         // Process Plato results
-        if (fs.existsSync(reportDir + '/plato/report.json')) {
-            try {
+        try {
+            console.log('Checking plato/report.json...');
+            if (fs.existsSync(reportDir + '/plato/report.json')) {
+                console.log('Found plato/report.json');
                 const platoData = JSON.parse(fs.readFileSync(reportDir + '/plato/report.json', 'utf8'));
                 Object.keys(platoData.reports).forEach(file => {
                     const report = platoData.reports[file];
@@ -131,14 +151,18 @@ jobs:
                         });
                     }
                 });
-            } catch (e) {
-                console.log('Error processing plato/report.json: ' + e);
+            } else {
+                console.log('plato/report.json not found');
             }
+        } catch (e) {
+            console.log('Error processing plato/report.json: ' + e);
         }
 
         // Process Retire.js results
-        if (fs.existsSync(reportDir + '/retire.json')) {
-            try {
+        try {
+            console.log('Checking retire.json...');
+            if (fs.existsSync(reportDir + '/retire.json')) {
+                console.log('Found retire.json');
                 const retireData = JSON.parse(fs.readFileSync(reportDir + '/retire.json', 'utf8'));
                 retireData.data.forEach(vuln => {
                     if (vuln.severity === 'high' || vuln.severity === 'critical') {
@@ -159,14 +183,18 @@ jobs:
                         });
                     }
                 });
-            } catch (e) {
-                console.log('Error processing retire.json: ' + e);
+            } else {
+                console.log('retire.json not found');
             }
+        } catch (e) {
+            console.log('Error processing retire.json: ' + e);
         }
 
         // Process JSCPD results
-        if (fs.existsSync(reportDir + '/jscpd.json')) {
-            try {
+        try {
+            console.log('Checking jscpd.json...');
+            if (fs.existsSync(reportDir + '/jscpd.json')) {
+                console.log('Found jscpd.json');
                 const jscpdData = JSON.parse(fs.readFileSync(reportDir + '/jscpd.json', 'utf8'));
                 jscpdData.duplications.forEach(dup => {
                     if (dup.lines > 50) {
@@ -178,14 +206,18 @@ jobs:
                         });
                     }
                 });
-            } catch (e) {
-                console.log('Error processing jscpd.json: ' + e);
+            } else {
+                console.log('jscpd.json not found');
             }
+        } catch (e) {
+            console.log('Error processing jscpd.json: ' + e);
         }
 
         // Process JSDoc results
-        if (fs.existsSync(reportDir + '/jsdoc.json')) {
-            try {
+        try {
+            console.log('Checking jsdoc.json...');
+            if (fs.existsSync(reportDir + '/jsdoc.json')) {
+                console.log('Found jsdoc.json');
                 const jsdocData = JSON.parse(fs.readFileSync(reportDir + '/jsdoc.json', 'utf8'));
                 if (jsdocData.errors && jsdocData.errors.length > 0) {
                     severitySummary.low.push({
@@ -200,11 +232,14 @@ jobs:
                         'message': jsdocData.warnings.length + ' documentation warnings found'
                     });
                 }
-            } catch (e) {
-                console.log('Error processing jsdoc.json: ' + e);
+            } else {
+                console.log('jsdoc.json not found');
             }
+        } catch (e) {
+            console.log('Error processing jsdoc.json: ' + e);
         }
 
+        console.log('Final severity summary:', JSON.stringify(severitySummary, null, 2));
         fs.writeFileSync(reportDir + '/severity_summary.json', JSON.stringify(severitySummary, null, 2));
         console.log("JavaScript severity summary generated successfully");
         SCRIPT_EOF
