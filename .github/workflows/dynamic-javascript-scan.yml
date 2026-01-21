@@ -1,11 +1,21 @@
 
-name: "JavaScript Security Scan"
+name: Dynamic JavaScript Code Scan
+
 on:
-  workflow_dispatch:
   push:
     branches: [ main, master, develop ]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      scan_tools:
+        description: 'Comma-separated list of tools to run'
+        required: false
+        default: 'eslint,plato'
+      project_name:
+        description: 'Project name for reporting'
+        required: false
+        default: 'javascript-project'
 
 env:
   REPORT_DIR: scan-reports
@@ -21,8 +31,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: "18"
-        cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
+        node-version: '18'
         
     - name: Install dependencies
       run: |
@@ -34,56 +43,18 @@ jobs:
         
     - name: Install scanning tools
       run: |
-        npm install -g eslint npm-audit-ci retire plato jsdoc jscpd
+        npm install -g {tool_installs}
         
     - name: Create report directory
+      run: mkdir -p $REPORT_DIR
+      
+    - name: Run JavaScript code scans
       run: |
-        mkdir -p $REPORT_DIR
+        echo "Starting JavaScript code scans..."
+        echo 'Running ESLint...'\n        echo '{"extends": ["eslint:recommended"], "env": {"browser": true, "node": true}, "parserOptions": {"ecmaVersion": 2018}}' > .eslintrc.json && eslint . --format=json --output-file=$REPORT_DIR/eslint.json 2>/dev/null || echo '[]' > $REPORT_DIR/eslint.json\n        echo 'Running Plato Complexity Analysis...'\n        plato -r -d $REPORT_DIR/plato . 2>/dev/null || (mkdir -p $REPORT_DIR/plato && echo '{"reports": {}}' > $REPORT_DIR/plato/report.json)
+        echo "All scans completed. Reports saved to $REPORT_DIR"
         
-    - name: Run security and quality scans
-      run: |
-        echo 'Starting JavaScript security scan...'
-        echo 'Running ESLint...'
-        echo '{"extends": ["eslint:recommended"], "env": {"browser": true, "node": true}, "parserOptions": {"ecmaVersion": 2018}}' > .eslintrc.json && eslint . --format=json --output-file=$REPORT_DIR/eslint.json 2>/dev/null || echo '[]' > $REPORT_DIR/eslint.json
-        echo 'Running Plato Complexity Analysis...'
-        plato -r -d $REPORT_DIR/plato . 2>/dev/null || (mkdir -p $REPORT_DIR/plato && echo '{"reports": {}}' > $REPORT_DIR/plato/report.json)
-        
-    - name: Initialize severity summary
-      run: |
-        echo '{"critical": [], "high": [], "medium": [], "low": [], "info": []}' > $REPORT_DIR/severity_summary.json
-        
-    - name: Debug scan results
-      run: |
-        echo "=== DEBUG: Check scan results ==="
-        echo "Report directory contents:"
-        ls -la $REPORT_DIR/
-        echo ""
-        echo "=== ESLint results ==="
-        if [ -f "$REPORT_DIR/eslint.json" ]; then
-          echo "ESLint file exists:"
-          cat $REPORT_DIR/eslint.json
-        else
-          echo "ESLint file NOT found"
-        fi
-        echo ""
-        echo "=== Plato results ==="
-        if [ -f "$REPORT_DIR/plato/report.json" ]; then
-          echo "Plato file exists:"
-          cat $REPORT_DIR/plato/report.json
-        else
-          echo "Plato file NOT found"
-          echo "Plato directory contents:"
-          ls -la $REPORT_DIR/plato/ 2>/dev/null || echo "Plato directory not found"
-        fi
-        echo ""
-        echo "=== Severity summary before processing ==="
-        if [ -f "$REPORT_DIR/severity_summary.json" ]; then
-          cat $REPORT_DIR/severity_summary.json
-        else
-          echo "Severity summary file NOT found"
-        fi
-        
-    - name: Run JavaScript processing script
+    - name: Generate severity summary
       run: |
         node << 'SCRIPT_EOF'
         const fs = require('fs');
@@ -97,22 +68,64 @@ jobs:
             "low": [],
             "info": []
         };
-
-        console.log('Report directory:', reportDir);
-        console.log('Files in report directory:');
-        try {
-            const files = fs.readdirSync(reportDir);
-            console.log(files);
-        } catch (e) {
-            console.log('Error reading directory:', e);
+        
+        // Process ESLint results
+        if (fs.existsSync(reportDir + '/eslint.json')) {
+            try {
+                const eslintData = JSON.parse(fs.readFileSync(reportDir + '/eslint.json', 'utf8'));
+                if (Array.isArray(eslintData) && eslintData.length > 0) {
+                    eslintData.forEach(result => {
+                        if (result.severity === 2) {
+                            severitySummary.high.push({
+                                'tool': 'eslint',
+                                'file': result.filePath,
+                                'line': result.lineNumber,
+                                'issue': result.ruleId,
+                                'message': result.message || 'ESLint error'
+                            });
+                        } else if (result.severity === 1) {
+                            severitySummary.medium.push({
+                                'tool': 'eslint',
+                                'file': result.filePath,
+                                'line': result.lineNumber,
+                                'issue': result.ruleId,
+                                'message': result.message || 'ESLint warning'
+                            });
+                        }
+                    });
+                }
+            } catch (e) {
+                console.log('Error processing eslint.json: ' + e);
+            }
         }
-
-        try {
-            console.log('Checking npm_audit.json...');
-            if (fs.existsSync(reportDir + '/npm_audit.json')) {
-                console.log('Found npm_audit.json');
+        
+        // Process Plato results
+        if (fs.existsSync(reportDir + '/plato/report.json')) {
+            try {
+                const platoData = JSON.parse(fs.readFileSync(reportDir + '/plato/report.json', 'utf8'));
+                if (platoData && platoData.reports) {
+                    Object.keys(platoData.reports).forEach(file => {
+                        const report = platoData.reports[file];
+                        if (report.complexity && report.complexity.aggregate && report.complexity.aggregate.complexity.cyclomatic > 10) {
+                            severitySummary.medium.push({
+                                'tool': 'plato',
+                                'file': file,
+                                'issue': 'High complexity',
+                                'message': 'Cyclomatic complexity: ' + report.complexity.aggregate.complexity.cyclomatic
+                            });
+                        }
+                    });
+                }
+            } catch (e) {
+                console.log('Error processing plato/report.json: ' + e);
+            }
+        }
+        
+        // Process npm_audit results
+        if (fs.existsSync(reportDir + '/npm_audit.json')) {
+            try {
                 const npmData = JSON.parse(fs.readFileSync(reportDir + '/npm_audit.json', 'utf8'));
-                if (npmData.vulnerabilities) {
+                if (npmData.vulnerabilities && npmData.vulnerabilities.length > 0) {
                     npmData.vulnerabilities.forEach(vuln => {
                         const severity = vuln.severity ? vuln.severity.toLowerCase() : 'unknown';
                         if (severitySummary[severity]) {
@@ -126,145 +139,65 @@ jobs:
                         }
                     });
                 }
-            } else {
-                console.log('npm_audit.json not found');
+            } catch (e) {
+                console.log('Error processing npm_audit.json: ' + e);
             }
-        } catch (e) {
-            console.log('Error processing npm_audit.json: ' + e);
         }
-
-        try {
-            console.log('Checking eslint.json...');
-            if (fs.existsSync(reportDir + '/eslint.json')) {
-                console.log('Found eslint.json');
-                const eslintData = JSON.parse(fs.readFileSync(reportDir + '/eslint.json', 'utf8'));
-                console.log('ESLint raw data:', JSON.stringify(eslintData, null, 2));
-                console.log('ESLint data type:', typeof eslintData);
-                console.log('ESLint is array:', Array.isArray(eslintData));
-                
-                if (Array.isArray(eslintData) && eslintData.length > 0) {
-                    console.log('Processing ESLint results...');
-                    eslintData.forEach(result => {
-                        if (result.severity === 2) { // error
-                            severitySummary.high.push({
-                                'tool': 'eslint',
-                                'file': result.filePath,
-                                'line': result.lineNumber,
-                                'issue': result.ruleId,
-                                'message': result.message || 'ESLint error'
-                            });
-                        } else if (result.severity === 1) { // warning
-                            severitySummary.medium.push({
-                                'tool': 'eslint',
-                                'file': result.filePath,
-                                'line': result.lineNumber,
-                                'issue': result.ruleId,
-                                'message': result.message || 'ESLint warning'
-                            });
-                        }
-                    });
-                } else {
-                    console.log('ESLint data is empty or not an array');
-                }
-            } else {
-                console.log('eslint.json not found');
-            }
-        } catch (e) {
-            console.log('Error processing eslint.json: ' + e);
-        }
-
-        // Process Plato results
-        try {
-            console.log('Checking plato/report.json...');
-            if (fs.existsSync(reportDir + '/plato/report.json')) {
-                console.log('Found plato/report.json');
-                const platoData = JSON.parse(fs.readFileSync(reportDir + '/plato/report.json', 'utf8'));
-                console.log('Plato raw data:', JSON.stringify(platoData, null, 2));
-                console.log('Plato data type:', typeof platoData);
-                
-                if (platoData && platoData.reports) {
-                    console.log('Processing Plato results...');
-                    Object.keys(platoData.reports).forEach(file => {
-                        const report = platoData.reports[file];
-                        if (report.complexity && report.complexity.aggregate && report.complexity.aggregate.complexity.cyclomatic > 10) {
-                            severitySummary.medium.push({
-                                'tool': 'plato',
-                                'file': file,
-                                'issue': 'High complexity',
-                                'message': 'Cyclomatic complexity: ' + report.complexity.aggregate.complexity.cyclomatic
-                            });
-                        }
-                    });
-                } else {
-                    console.log('Plato data is empty or missing reports');
-                }
-            } else {
-                console.log('plato/report.json not found');
-            }
-        } catch (e) {
-            console.log('Error processing plato/report.json: ' + e);
-        }
-
+        
         // Process Retire.js results
-        try {
-            console.log('Checking retire.json...');
-            if (fs.existsSync(reportDir + '/retire.json')) {
-                console.log('Found retire.json');
+        if (fs.existsSync(reportDir + '/retire.json')) {
+            try {
                 const retireData = JSON.parse(fs.readFileSync(reportDir + '/retire.json', 'utf8'));
-                retireData.data.forEach(vuln => {
-                    if (vuln.severity === 'high' || vuln.severity === 'critical') {
-                        severitySummary[vuln.severity].push({
-                            'tool': 'retire',
-                            'package': vuln.component,
-                            'version': vuln.version,
-                            'issue': vuln.identifiers.join(', '),
-                            'message': vuln.info.join(', ')
-                        });
-                    } else if (vuln.severity === 'medium') {
-                        severitySummary.medium.push({
-                            'tool': 'retire',
-                            'package': vuln.component,
-                            'version': vuln.version,
-                            'issue': vuln.identifiers.join(', '),
-                            'message': vuln.info.join(', ')
-                        });
-                    }
-                });
-            } else {
-                console.log('retire.json not found');
+                if (retireData.data && retireData.data.length > 0) {
+                    retireData.data.forEach(vuln => {
+                        if (vuln.severity === 'high' || vuln.severity === 'critical') {
+                            severitySummary[vuln.severity].push({
+                                'tool': 'retire',
+                                'package': vuln.component,
+                                'version': vuln.version,
+                                'issue': vuln.identifiers.join(', '),
+                                'message': vuln.info.join(', ')
+                            });
+                        } else if (vuln.severity === 'medium') {
+                            severitySummary.medium.push({
+                                'tool': 'retire',
+                                'package': vuln.component,
+                                'version': vuln.version,
+                                'issue': vuln.identifiers.join(', '),
+                                'message': vuln.info.join(', ')
+                            });
+                        }
+                    });
+                }
+            } catch (e) {
+                console.log('Error processing retire.json: ' + e);
             }
-        } catch (e) {
-            console.log('Error processing retire.json: ' + e);
         }
-
+        
         // Process JSCPD results
-        try {
-            console.log('Checking jscpd.json...');
-            if (fs.existsSync(reportDir + '/jscpd.json')) {
-                console.log('Found jscpd.json');
+        if (fs.existsSync(reportDir + '/jscpd.json')) {
+            try {
                 const jscpdData = JSON.parse(fs.readFileSync(reportDir + '/jscpd.json', 'utf8'));
-                jscpdData.duplications.forEach(dup => {
-                    if (dup.lines > 50) {
-                        severitySummary.low.push({
-                            'tool': 'jscpd',
-                            'file': dup.file,
-                            'issue': 'Code duplication',
-                            'message': dup.lines + ' duplicated lines found'
-                        });
-                    }
-                });
-            } else {
-                console.log('jscpd.json not found');
+                if (jscpdData.duplications && jscpdData.duplications.length > 0) {
+                    jscpdData.duplications.forEach(dup => {
+                        if (dup.lines > 50) {
+                            severitySummary.low.push({
+                                'tool': 'jscpd',
+                                'file': dup.file,
+                                'issue': 'Code duplication',
+                                'message': dup.lines + ' duplicated lines found'
+                            });
+                        }
+                    });
+                }
+            } catch (e) {
+                console.log('Error processing jscpd.json: ' + e);
             }
-        } catch (e) {
-            console.log('Error processing jscpd.json: ' + e);
         }
-
+        
         // Process JSDoc results
-        try {
-            console.log('Checking jsdoc.json...');
-            if (fs.existsSync(reportDir + '/jsdoc.json')) {
-                console.log('Found jsdoc.json');
+        if (fs.existsSync(reportDir + '/jsdoc.json')) {
+            try {
                 const jsdocData = JSON.parse(fs.readFileSync(reportDir + '/jsdoc.json', 'utf8'));
                 if (jsdocData.errors && jsdocData.errors.length > 0) {
                     severitySummary.low.push({
@@ -279,29 +212,14 @@ jobs:
                         'message': jsdocData.warnings.length + ' documentation warnings found'
                     });
                 }
-            } else {
-                console.log('jsdoc.json not found');
+            } catch (e) {
+                console.log('Error processing jsdoc.json: ' + e);
             }
-        } catch (e) {
-            console.log('Error processing jsdoc.json: ' + e);
         }
-
-        console.log('Final severity summary:', JSON.stringify(severitySummary, null, 2));
+        
         fs.writeFileSync(reportDir + '/severity_summary.json', JSON.stringify(severitySummary, null, 2));
         console.log("JavaScript severity summary generated successfully");
-        console.log('=== FINAL DEBUG: severity_summary.json contents ===');
-        console.log(fs.readFileSync(reportDir + '/severity_summary.json', 'utf8'));
         SCRIPT_EOF
-        
-    - name: Debug final results
-      run: |
-        echo "=== DEBUG: Final severity summary ==="
-        if [ -f "$REPORT_DIR/severity_summary.json" ]; then
-          echo "Final severity summary file contents:"
-          cat $REPORT_DIR/severity_summary.json
-        else
-          echo "Final severity summary file NOT found"
-        fi
         
     - name: Upload scan reports
       uses: actions/upload-artifact@v4
