@@ -43,7 +43,7 @@ jobs:
         
     - name: Install scanning tools
       run: |
-        npm install -g {tool_installs}
+        npm install -g eslint npm-audit-ci retire plato jsdoc jscpd
         
     - name: Create report directory
       run: mkdir -p $REPORT_DIR
