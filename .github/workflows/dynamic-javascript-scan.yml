@@ -42,8 +42,8 @@ jobs:
         echo 'Starting JavaScript security scan...'
         echo 'Running ESLint...'
         eslint . --format=json --output-file=$REPORT_DIR/eslint.json || true
-        echo 'Running Retire.js Scanner...'
-        retire --outputformat json --outputpath $REPORT_DIR/retire.json || true
+        echo 'Running Plato Complexity Analysis...'
+        plato -r -d $REPORT_DIR/plato.json . || true
         
     - name: Initialize severity summary
       run: |
