@@ -130,28 +130,6 @@ jobs:
             console.log('ESLint file does NOT exist');
         }
         
-        // Process Plato results
-        if (fs.existsSync(reportDir + '/plato/report.json')) {
-            try {
-                const platoData = JSON.parse(fs.readFileSync(reportDir + '/plato/report.json', 'utf8'));
-                if (platoData && platoData.reports) {
-                    Object.keys(platoData.reports).forEach(file => {
-                        const report = platoData.reports[file];
-                        if (report.complexity && report.complexity.aggregate && report.complexity.aggregate.complexity.cyclomatic > 10) {
-                            severitySummary.medium.push({
-                                'tool': 'plato',
-                                'file': file,
-                                'issue': 'High complexity',
-                                'message': 'Cyclomatic complexity: ' + report.complexity.aggregate.complexity.cyclomatic
-                            });
-                        }
-                    });
-                }
-            } catch (e) {
-                console.log('Error processing plato/report.json: ' + e);
-            }
-        }
-        
         // Process npm_audit results
         if (fs.existsSync(reportDir + '/npm_audit.json')) {
             try {
