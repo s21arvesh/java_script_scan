@@ -1,125 +1,48 @@
-// Sample JavaScript file with code quality and security issues
-// Missing JSDoc comments - will be detected by JSDoc scanner
+// Test JavaScript file with ESLint violations for scanning
 
-var unusedVariable = 'This variable is never used'; // ESLint will detect unused var
+// Violation 1: Using var instead of let/const
+var old_variable = "This should use let or const";
 
-function calculateTotal(items, tax, discount, shipping, handling, specialFee, extraCost) {
-    // High cyclomatic complexity - will be detected by Plato
-    var total = 0;
-    
-    if (items.length > 0) {
-        for (var i = 0; i < items.length; i++) {
-            if (items[i].price > 0) {
-                if (items[i].category === 'electronics') {
-                    total += items[i].price * 1.1;
-                    if (items[i].weight > 10) {
-                        total += shipping * 2;
-                    } else {
-                        total += shipping;
-                    }
-                } else if (items[i].category === 'books') {
-                    total += items[i].price * 0.9;
-                    if (discount > 0) {
-                        total -= discount;
-                    }
-                } else {
-                    total += items[i].price;
-                }
-            }
-        }
-    }
-    
-    // Use of eval() - security issue
-    var discountCode = prompt("Enter discount code:");
-    eval("total -= " + discountCode + ";");
-    
-    return total;
-}
+// Violation 2: Missing semicolons
+var missing_semicolon = "Missing semicolon here"
 
-// Duplicate code - will be detected by JSCPD
-function processOrderA(order) {
-    var total = 0;
-    for (var i = 0; i < order.items.length; i++) {
-        total += order.items[i].price;
-    }
-    return total;
-}
+// Violation 3: Unused variables
+const unused_variable = "This variable is never used";
 
-function processOrderB(order) {
-    var total = 0;
-    for (var i = 0; i < order.items.length; i++) {
-        total += order.items[i].price;
-    }
-    return total;
-}
-
-// Missing semicolons - ESLint will detect
-function getUserData(userId) {
-    var userData = fetchUser(userId)
-    return userData
-}
-
-// Global variable pollution
-globalConfig = {
-    apiEndpoint: 'https://api.example.com',
-    timeout: 5000
-};
-
-// Insecure random number generation
-function generateToken() {
-    return Math.random().toString(36).substr(2, 9);
-}
-
-// Missing error handling
-function saveData(data) {
-    localStorage.setItem('userData', JSON.stringify(data));
-}
-
-// Console.log statements in production code
-console.log('Debug: User logged in');
-console.warn('Warning: Deprecated API used');
-
-// Unused function parameters
-function updateProfile(userId, name, email, phone, address, city, state, country, zipcode) {
-    // Only using userId and name
-    var user = findUser(userId);
-    user.name = name;
-    return user;
-}
-
-// Complex nested conditions
-function validateUserInput(input) {
-    if (input !== null && input !== undefined) {
-        if (typeof input === 'string') {
-            if (input.length > 0) {
-                if (input.trim() !== '') {
-                    if (input.match(/^[a-zA-Z0-9]+$/)) {
-                        return true;
-                    }
-                }
-            }
-        }
+// Violation 4: Using == instead of ===
+function compareValues(a, b) {
+    if (a == b) {  // Should use ===
+        return true;
     }
     return false;
 }
 
-// Potential XSS vulnerability
-function displayUserContent(content) {
-    document.getElementById('output').innerHTML = content; // Direct innerHTML assignment
+// Violation 5: Undefined variables
+function testUndefined() {
+    console.log(undefined_variable); // undefined_variable is not defined
 }
 
-// Memory leak potential
-var largeData = [];
-function addData(item) {
-    largeData.push(item);
-    // Never clears the array
+// Violation 6: Console.log without semicolon
+console.log("Missing semicolon")  // Missing semicolon
+
+// Violation 7: Function not used
+function unusedFunction() {
+    alert("This function is never called"); // alert is not recommended
 }
 
-// Synchronous operations blocking main thread
-function syncOperation() {
-    var result = '';
-    for (var i = 0; i < 1000000; i++) {
-        result += 'Processing...';
-    }
-    return result;
+// Violation 8: Multiple var declarations
+var x = 1, y = 2, z = 3; // Should use separate declarations
+
+// Violation 9: Extra parentheses
+if ((x === 1)) {  // Unnecessary parentheses
+    return true;
 }
+
+// Violation 10: Mixed quotes
+const mixed_quotes = 'Single quotes here'; // Should be consistent
+
+// Export with issues
+module.exports = {
+    compareValues,
+    testUndefined
+};
