@@ -9,14 +9,6 @@ var missing_semicolon = "Missing semicolon here"
 // Violation 3: Unused variable
 const unused_variable = "This variable is never used";
 
-// Violation 4: Using == instead of ===
-function compareValues(a, b) {
-    if (a == b) {
-        return true;
-    }
-    return false;
-}
-
 // Violation 5: Console.log without semicolon
 console.log("Missing semicolon")
 
