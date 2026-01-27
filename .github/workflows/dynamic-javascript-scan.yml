@@ -43,16 +43,33 @@ jobs:
         
     - name: Install scanning tools
       run: |
-        npm install -g eslint npm-audit-ci retire plato jsdoc jscpd
+        npm install -g eslint npm-audit-ci retire plato
         
     - name: Create report directory
       run: mkdir -p $REPORT_DIR
       
     - name: Run JavaScript code scans
       run: |
-        echo "Starting JavaScript code scans..."
-        echo 'Running ESLint...'\n        echo '{"extends": ["eslint:recommended"], "env": {"browser": true, "node": true}, "parserOptions": {"ecmaVersion": 2018}}' > .eslintrc.json && eslint . --format=json --output-file=$REPORT_DIR/eslint.json 2>/dev/null || echo '[]' > $REPORT_DIR/eslint.json\n        echo 'Running Plato Complexity Analysis...'\n        plato -r -d $REPORT_DIR/plato . 2>/dev/null || (mkdir -p $REPORT_DIR/plato && echo '{"reports": {}}' > $REPORT_DIR/plato/report.json)
-        echo "All scans completed. Reports saved to $REPORT_DIR"
+        echo 'Starting JavaScript security scan...'
+        echo 'Current directory contents:'
+        ls -la
+        echo 'Looking for package.json:'
+        if [ -f "package.json" ]; then
+          echo 'package.json found:'
+          cat package.json
+        else
+          echo 'No package.json found - creating dummy one for testing'
+          echo '{"name": "test-project", "version": "1.0.0"}' > package.json
+        fi
+        echo 'Creating ESLint configuration...'
+        echo 'module.exports = [];' > eslint.config.js
+        echo 'JavaScript files found:'
+        find . -name "*.js" -type f | head -10
+        echo '=== Running Scan Commands ==='
+        echo 'Running ESLint...'\n        echo '{"extends": ["eslint:recommended"], "env": {"browser": true, "node": true}, "parserOptions": {"ecmaVersion": 2018}}' > .eslintrc.json && eslint . --format=json --output-file=$REPORT_DIR/eslint.json 2>/dev/null || echo '[]' > $REPORT_DIR/eslint.json\n        echo 'Running Plato Complexity Analysis...'\n        plato -r -d $REPORT_DIR/plato-report . 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{"reports": {}}' > $REPORT_DIR/plato-report/index.json)
+        echo '=== Scan Commands Completed ==='
+        echo 'Report directory contents after scans:'
+        ls -la $REPORT_DIR/
         
     - name: Generate severity summary
       run: |
@@ -69,8 +86,7 @@ jobs:
             "info": []
         };
         
-        // Process ESLint results
-        console.log('=== DEBUG: Processing ESLint ===');
+        console.log('=== DEBUG: JavaScript Severity Summary Generation ===');
         console.log('Report directory:', reportDir);
         console.log('Files in report directory:');
         try {
@@ -80,38 +96,32 @@ jobs:
             console.log('Error reading directory:', e);
         }
         
-        if (fs.existsSync(reportDir + '/eslint.json')) {
-            console.log('ESLint file exists');
+        // Process ESLint results
+        console.log('=== DEBUG: Checking eslint.json ===');
+        if (fs.existsSync(`${reportDir}/eslint.json`)) {
+            console.log('eslint.json found, processing...');
             try {
-                const eslintData = JSON.parse(fs.readFileSync(reportDir + '/eslint.json', 'utf8'));
-                console.log('ESLint raw data:', JSON.stringify(eslintData, null, 2));
-                console.log('ESLint data type:', typeof eslintData);
-                console.log('ESLint is array:', Array.isArray(eslintData));
-                console.log('ESLint length:', eslintData ? eslintData.length : 'N/A');
-                
-                if (Array.isArray(eslintData) && eslintData.length > 0) {
-                    console.log('Processing ESLint results...');
-                    eslintData.forEach(result => {
-                        if (result.severity === 2) {
-                            severitySummary.high.push({
-                                'tool': 'eslint',
-                                'file': result.filePath,
-                                'line': result.lineNumber,
-                                'issue': result.ruleId,
-                                'message': result.message || 'ESLint error'
-                            });
-                        } else if (result.severity === 1) {
-                            severitySummary.medium.push({
-                                'tool': 'eslint',
-                                'file': result.filePath,
-                                'line': result.lineNumber,
-                                'issue': result.ruleId,
-                                'message': result.message || 'ESLint warning'
-                            });
-                        }
-                    });
-                } else {
-                    console.log('ESLint data is empty or not an array');
+                const eslintData = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
+                console.log('ESLint data:', eslintData);
+                console.log('ESLint results count:', eslintData.length);
+                eslintData.forEach(result => {
+                    // Only add files that have actual issues
+                    if (result.errorCount > 0 || result.warningCount > 0) {
+                        result.messages.forEach(message => {
+                            const severity = message.severity ? (message.severity === 2 ? 'high' : 'medium') : 'medium';
+                            if (severitySummary[severity]) {
+                                severitySummary[severity].push({
+                                    'tool': 'eslint',
+                                    'file': result.filePath,
+                                    'line': message.line || 'N/A',
+                                    'column': message.column || 'N/A',
+                                    'issue': message.ruleId || 'eslint-rule',
+                                    'message': message.message
+                                });
+                            }
+                        });
+                    }
+                });
                 }
             } catch (e) {
                 console.log('Error processing eslint.json: ' + e);
@@ -194,54 +204,38 @@ jobs:
                 console.log('Error processing retire.json: ' + e);
             }
         }
-        
-        // Process JSCPD results
-        if (fs.existsSync(reportDir + '/jscpd.json')) {
+
+        // Process Plato results
+        if (fs.existsSync(`${reportDir}/plato-report/index.json`)) {
             try {
-                const jscpdData = JSON.parse(fs.readFileSync(reportDir + '/jscpd.json', 'utf8'));
-                if (jscpdData.duplications && jscpdData.duplications.length > 0) {
-                    jscpdData.duplications.forEach(dup => {
-                        if (dup.lines > 50) {
-                            severitySummary.low.push({
-                                'tool': 'jscpd',
-                                'file': dup.file,
-                                'issue': 'Code duplication',
-                                'message': dup.lines + ' duplicated lines found'
-                            });
-                        }
-                    });
-                }
+                const platoData = JSON.parse(fs.readFileSync(`${reportDir}/plato-report/index.json`, 'utf8'));
+                Object.keys(platoData.reports).forEach(file => {
+                    const report = platoData.reports[file];
+                    if (report.complexity && report.complexity.aggregate.complexity.cyclomatic > 10) {
+                        severitySummary.medium.push({
+                            'tool': 'plato',
+                            'file': file,
+                            'issue': 'High complexity',
+                            'message': `Cyclomatic complexity: ${report.complexity.aggregate.complexity.cyclomatic}`
+                        });
+                    }
+                });
             } catch (e) {
-                console.log('Error processing jscpd.json: ' + e);
+                console.log(`Error processing plato report: ${e}`);
             }
         }
-        
-        // Process JSDoc results
-        if (fs.existsSync(reportDir + '/jsdoc.json')) {
-            try {
-                const jsdocData = JSON.parse(fs.readFileSync(reportDir + '/jsdoc.json', 'utf8'));
-                if (jsdocData.errors && jsdocData.errors.length > 0) {
-                    severitySummary.low.push({
-                        'tool': 'jsdoc',
-                        'issue': 'Documentation errors',
-                        'message': jsdocData.errors.length + ' documentation errors found'
-                    });
-                } else if (jsdocData.warnings && jsdocData.warnings.length > 0) {
-                    severitySummary.info.push({
-                        'tool': 'jsdoc',
-                        'issue': 'Documentation warnings',
-                        'message': jsdocData.warnings.length + ' documentation warnings found'
-                    });
-                }
-            } catch (e) {
-                console.log('Error processing jsdoc.json: ' + e);
-            }
-        }
+
+        // Save severity summary
+        console.log('=== DEBUG: Final Severity Summary ===');
+        console.log('Critical:', severitySummary.critical.length);
+        console.log('High:', severitySummary.high.length);
+        console.log('Medium:', severitySummary.medium.length);
+        console.log('Low:', severitySummary.low.length);
+        console.log('Info:', severitySummary.info.length);
+        console.log('Final summary:', JSON.stringify(severitySummary, null, 2));
         
         fs.writeFileSync(reportDir + '/severity_summary.json', JSON.stringify(severitySummary, null, 2));
         console.log("JavaScript severity summary generated successfully");
-        console.log('=== DEBUG: Final severity summary ===');
-        console.log(JSON.stringify(severitySummary, null, 2));
         SCRIPT_EOF
         
     - name: Upload scan reports
