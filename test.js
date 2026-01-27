@@ -20,11 +20,6 @@ function showAlert() {
 // Violation 7: Multiple var declarations in one line
 var x = 1, y = 2, z = 3;
 
-// Violation 8: Extra parentheses
-if ((x === 1)) {
-    return true;
-}
-
 // Violation 9: Single quotes instead of double quotes
 const single_quotes = 'Should use double quotes';
 
