@@ -66,7 +66,7 @@ jobs:
         echo 'JavaScript files found:'
         find . -name "*.js" -type f | head -10
         echo '=== Running Scan Commands ==='
-        echo 'Running ESLint...'\n        eslint . --format=json --output-file=$REPORT_DIR/eslint.json --config .eslintrc.json 2>/dev/null || echo '[]' > $REPORT_DIR/eslint.json\n        echo 'Running Plato Complexity Analysis...'\n        plato -r -d $REPORT_DIR/plato-report . 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{"reports": {}}' > $REPORT_DIR/plato-report/index.json)
+        echo 'Running ESLint...'\n        echo '=== ESLINT DEBUG ===' && ls -la .eslintrc.json && eslint . --format=json --output-file=$REPORT_DIR/eslint.json --config .eslintrc.json || echo 'ESLint failed, creating empty file' && echo '[]' > $REPORT_DIR/eslint.json\n        echo 'Running Plato Complexity Analysis...'\n        plato -r -d $REPORT_DIR/plato-report . 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{"reports": {}}' > $REPORT_DIR/plato-report/index.json)
         echo '=== Scan Commands Completed ==='
         echo 'Report directory contents after scans:'
         ls -la $REPORT_DIR/
