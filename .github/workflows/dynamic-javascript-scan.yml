@@ -122,7 +122,6 @@ jobs:
                         });
                     }
                 });
-                }
             } catch (e) {
                 console.log('Error processing eslint.json: ' + e);
             }
