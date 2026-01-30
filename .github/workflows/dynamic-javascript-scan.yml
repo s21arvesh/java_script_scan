@@ -12,6 +12,17 @@ on:
         description: 'Project name for reporting'
         required: false
         default: 'javascript-project'
+  push:
+    branches: [ main, master ]
+    paths:
+      - '.github/workflows/dynamic-javascript-scan.yml'
+      - '**/*.js'
+      - '**/*.jsx'
+      - '**/*.ts'
+      - '**/*.tsx'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'yarn.lock'
 
 env:
   REPORT_DIR: scan-reports
