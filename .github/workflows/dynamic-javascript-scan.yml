@@ -58,14 +58,58 @@ jobs:
           echo '{"name": "test-project", "version": "1.0.0"}' > package.json
         fi
         echo 'Creating ESLint configuration...'
-        echo 'module.exports = { env: { browser: true, es2021: true, node: true }, extends: ["eslint:recommended"], parserOptions: { ecmaVersion: 12, sourceType: "commonjs" }, rules: { "no-var": "error", "semi": "error", "no-unused-vars": "warn", "eqeqeq": "error", "no-alert": "error", "one-var": "error", "no-extra-parens": "warn", "quotes": ["error", "double"], "no-undef": "error" } };' > eslint.config.js
+        cat > eslint.config.js << 'EOF'
+import js from '@eslint/js';
+
+export default [
+  js.configs.recommended,
+  {
+    languageOptions: {
+      ecmaVersion: 2021,
+      sourceType: 'commonjs',
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        Buffer: 'readonly',
+        __dirname: 'readonly',
+        __filename: 'readonly',
+        module: 'readonly',
+        require: 'readonly',
+        exports: 'readonly',
+        alert: 'readonly'
+      }
+    },
+    rules: {
+      'no-var': 'error',
+      'semi': 'error',
+      'no-unused-vars': 'warn',
+      'eqeqeq': 'error',
+      'no-alert': 'error',
+      'one-var': 'error',
+      'quotes': ['error', 'double'],
+      'no-undef': 'error'
+    }
+  }
+];
+EOF
         echo 'JavaScript files found:'
         find . -name "*.js" -type f | head -10
+        echo 'ESLint configuration:'
+        cat eslint.config.js
         echo '=== Running Scan Commands ==='
-        echo 'Running ESLint...'\n        eslint . --format=json --output-file=$REPORT_DIR/eslint.json || true\n        echo 'Running Plato Complexity Analysis...'\n        plato -r -d $REPORT_DIR/plato-report . 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{"reports": {}}' > $REPORT_DIR/plato-report/index.json)
+        echo 'Running ESLint...'\n        npm install -g eslint @eslint/js && eslint . --format=json --output-file=$REPORT_DIR/eslint.json || true\n        echo 'Running Plato Complexity Analysis...'\n        plato -r -d $REPORT_DIR/plato-report . 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{"reports": {}}' > $REPORT_DIR/plato-report/index.json)
         echo '=== Scan Commands Completed ==='
         echo 'Report directory contents after scans:'
         ls -la $REPORT_DIR/
+        echo 'ESLint output check:'
+        if [ -f "$REPORT_DIR/eslint.json" ]; then
+          echo 'ESLint.json exists, size:'
+          wc -l $REPORT_DIR/eslint.json
+          echo 'ESLint.json content (first 500 chars):'
+          head -c 500 $REPORT_DIR/eslint.json
+        else
+          echo 'ESLint.json NOT found'
+        fi
         
     - name: Generate severity summary
       run: |
