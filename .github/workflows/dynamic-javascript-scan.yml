@@ -31,8 +31,6 @@ jobs:
         
     - name: Install dependencies
       run: |
-        npm install -g npm install -g eslint npm install -g plato
-        echo "Installing additional scan tools..."
         npm install -g eslint plato npm-audit-ci retire
         echo "Verifying installations:"
         eslint --version
@@ -46,28 +44,28 @@ jobs:
     - name: Create ESLint config
       run: |
         cat > .eslintrc.json << 'EOF'
-{
-  "env": {
-    "browser": true,
-    "es2021": true,
-    "node": true,
-    "commonjs": true
-  },
-  "extends": ["eslint:recommended"],
-  "parserOptions": {
-    "ecmaVersion": 12,
-    "sourceType": "commonjs"
-  },
-  "rules": {
-    "no-var": "error",
-    "semi": "error",
-    "no-unused-vars": "warn",
-    "no-alert": "error",
-    "quotes": ["error", "double"],
-    "no-undef": "error"
-  }
-}
-EOF
+        {
+          "env": {
+            "browser": true,
+            "es2021": true,
+            "node": true,
+            "commonjs": true
+          },
+          "extends": ["eslint:recommended"],
+          "parserOptions": {
+            "ecmaVersion": 12,
+            "sourceType": "commonjs"
+          },
+          "rules": {
+            "no-var": "error",
+            "semi": "error",
+            "no-unused-vars": "warn",
+            "no-alert": "error",
+            "quotes": ["error", "double"],
+            "no-undef": "error"
+          }
+        }
+        EOF
     
     - name: Run JavaScript code scans
       run: |
