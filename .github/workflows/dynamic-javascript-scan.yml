@@ -31,8 +31,6 @@ jobs:
         
     - name: Install dependencies
       run: |
-        npm install -g npm install -g eslint npm install -g plato
-        echo "Installing additional scan tools..."
         npm install -g eslint plato npm-audit-ci retire
         echo "Verifying installations:"
         eslint --version
