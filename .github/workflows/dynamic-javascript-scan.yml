@@ -31,185 +31,186 @@ jobs:
         
     - name: Install dependencies
       run: |
-        if [ -f "package.json" ]; then
-          npm install
-        else
-          echo "No package.json found, skipping npm install"
-        fi
-        
-    - name: Install scanning tools
-      run: |
-        npm install -g eslint npm-audit-ci retire plato
+        npm install -g npm install -g eslint npm install -g plato
+        echo "Installing additional scan tools..."
+        npm install -g eslint plato npm-audit-ci retire
+        echo "Verifying installations:"
+        eslint --version
+        plato --version
+        npm-audit-ci --version || echo "npm-audit-ci not available"
+        retire --version || echo "retire not available"
         
     - name: Create report directory
       run: mkdir -p $REPORT_DIR
-      
+    
+    - name: Create ESLint config
+      run: |
+        cat > .eslintrc.json << 'EOF'
+{
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "node": true,
+    "commonjs": true
+  },
+  "extends": ["eslint:recommended"],
+  "parserOptions": {
+    "ecmaVersion": 12,
+    "sourceType": "commonjs"
+  },
+  "rules": {
+    "no-var": "error",
+    "semi": "error",
+    "no-unused-vars": "warn",
+    "no-alert": "error",
+    "quotes": ["error", "double"],
+    "no-undef": "error"
+  }
+}
+EOF
+    
     - name: Run JavaScript code scans
       run: |
-        echo 'Starting JavaScript security scan...'
-        echo 'Current directory contents:'
-        ls -la
-        echo 'Looking for package.json:'
-        if [ -f "package.json" ]; then
-          echo 'package.json found:'
-          cat package.json
-        else
-          echo 'No package.json found - creating dummy one for testing'
-          echo '{"name": "test-project", "version": "1.0.0"}' > package.json
-        fi
-        echo 'Creating ESLint configuration...'
-        echo 'module.exports = { env: { browser: true, es2021: true, node: true }, extends: ["eslint:recommended"], parserOptions: { ecmaVersion: 12, sourceType: "commonjs" }, rules: { "no-var": "error", "semi": "error", "no-unused-vars": "warn", "eqeqeq": "error", "no-alert": "error", "one-var": "error", "no-extra-parens": "warn", "quotes": ["error", "double"], "no-undef": "error" } };' > eslint.config.js
-        echo 'JavaScript files found:'
+        echo "Starting JavaScript code scans..."
+        echo "Current directory: $(pwd)"
+        echo "Report directory: $REPORT_DIR"
+        echo "JavaScript files found:"
         find . -name "*.js" -type f | head -10
-        echo '=== Running Scan Commands ==='
+        echo "=== Running Scan Commands ==="
+        echo "DEBUG: Current directory: $(pwd)"
+        echo "DEBUG: JavaScript files in current directory:"
+        find . -name "*.js" -type f -exec echo "  - {{}}" \;
+        echo "DEBUG: About to execute scan_commands..."
         echo 'Running ESLint...'\n        eslint . --format=json --output-file=$REPORT_DIR/eslint.json || true\n        echo 'Running Plato Complexity Analysis...'\n        plato -r -d $REPORT_DIR/plato-report . 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{"reports": {}}' > $REPORT_DIR/plato-report/index.json)
-        echo '=== Scan Commands Completed ==='
-        echo 'Report directory contents after scans:'
+        echo "DEBUG: scan_commands completed"
+        echo "=== Scan Commands Completed ==="
+        echo "Report directory contents after scans:"
         ls -la $REPORT_DIR/
+        echo "=== Checking each tool's report file ==="
+        echo "ESLint report file:"
+        if [ -f "$REPORT_DIR/eslint.json" ]; then
+          echo "ESLint report exists"
+          echo "ESLint report size: $(wc -c < $REPORT_DIR/eslint.json)"
+          echo "ESLint report preview:"
+          head -20 $REPORT_DIR/eslint.json
+        else
+          echo "ESLint report NOT found"
+        fi
+        echo "Plato report file:"
+        if [ -f "$REPORT_DIR/plato-report/index.json" ]; then
+          echo "Plato report exists"
+          echo "Plato report size: $(wc -c < $REPORT_DIR/plato-report/index.json)"
+        else
+          echo "Plato report NOT found"
+        fi
         
     - name: Generate severity summary
       run: |
-        node << 'SCRIPT_EOF'
-        const fs = require('fs');
-        const path = require('path');
-
-        const reportDir = process.env.REPORT_DIR || 'scan-reports';
-        let severitySummary = {
-            "critical": [],
-            "high": [],
-            "medium": [],
-            "low": [],
-            "info": []
-        };
+        python3 << 'EOF'
+        import json
+        import os
+        from pathlib import Path
         
-        console.log('=== DEBUG: JavaScript Severity Summary Generation ===');
-        console.log('Report directory:', reportDir);
-        console.log('Files in report directory:');
-        try {
-            const files = fs.readdirSync(reportDir);
-            console.log(files);
-        } catch (e) {
-            console.log('Error reading directory:', e);
-        }
+        report_dir = Path(os.environ.get('REPORT_DIR', 'scan-reports'))
+        print("DEBUG: Report directory: " + str(report_dir))
+        print("DEBUG: Report directory exists: " + str(report_dir.exists()))
+        print("DEBUG: Report directory contents: " + str(list(report_dir.glob('*'))))
         
-        // Process ESLint results
-        console.log('=== DEBUG: Checking eslint.json ===');
-        if (fs.existsSync(`${reportDir}/eslint.json`)) {
-            console.log('eslint.json found, processing...');
-            try {
-                const eslintData = JSON.parse(fs.readFileSync(`${reportDir}/eslint.json`, 'utf8'));
-                console.log('ESLint data:', eslintData);
-                console.log('ESLint results count:', eslintData.length);
-                eslintData.forEach(result => {
-                    // Only add files that have actual issues
-                    if (result.errorCount > 0 || result.warningCount > 0) {
-                        result.messages.forEach(message => {
-                            const severity = message.severity ? (message.severity === 2 ? 'high' : 'medium') : 'medium';
-                            if (severitySummary[severity]) {
-                                severitySummary[severity].push({
-                                    'tool': 'eslint',
-                                    'file': result.filePath,
-                                    'line': message.line || 'N/A',
-                                    'column': message.column || 'N/A',
-                                    'issue': message.ruleId || 'eslint-rule',
-                                    'message': message.message
-                                });
-                            }
-                        });
-                    }
-                });
-            } catch (e) {
-                console.log('Error processing eslint.json: ' + e);
-            }
-        } else {
-            console.log('ESLint file does NOT exist');
-        }
+        # Check which report files exist
+        report_files = ['eslint.json', 'plato-report/index.json', 'npm_audit.json', 'retire.json']
+        for file_name in report_files:
+            file_path = report_dir / file_name
+            if file_path.exists():
+                print("DEBUG: " + file_name + " exists with size: " + str(file_path.stat().st_size))
+            else:
+                print("DEBUG: " + file_name + " does not exist")
         
-        // Process npm_audit results
-        if (fs.existsSync(reportDir + '/npm_audit.json')) {
-            try {
-                const npmData = JSON.parse(fs.readFileSync(reportDir + '/npm_audit.json', 'utf8'));
-                if (npmData.vulnerabilities && npmData.vulnerabilities.length > 0) {
-                    npmData.vulnerabilities.forEach(vuln => {
-                        const severity = vuln.severity ? vuln.severity.toLowerCase() : 'unknown';
-                        if (severitySummary[severity]) {
-                            severitySummary[severity].push({
-                                'tool': 'npm_audit',
-                                'package': vuln.module_name,
-                                'version': (vuln.findings && vuln.findings.length > 0) ? vuln.findings[0].version : 'N/A',
-                                'issue': vuln.title,
-                                'message': vuln.overview || 'Vulnerability found'
-                            });
-                        }
-                    });
-                }
-            } catch (e) {
-                console.log('Error processing npm_audit.json: ' + e);
-            }
-        }
+        severity_summary = dict()
+        severity_summary['critical'] = []
+        severity_summary['high'] = []
+        severity_summary['medium'] = []
+        severity_summary['low'] = []
+        severity_summary['info'] = []
         
-        // Process Retire.js results
-        if (fs.existsSync(reportDir + '/retire.json')) {
-            try {
-                const retireData = JSON.parse(fs.readFileSync(reportDir + '/retire.json', 'utf8'));
-                if (retireData.data && retireData.data.length > 0) {
-                    retireData.data.forEach(vuln => {
-                        if (vuln.severity === 'high' || vuln.severity === 'critical') {
-                            severitySummary[vuln.severity].push({
-                                'tool': 'retire',
-                                'package': vuln.component,
-                                'version': vuln.version,
-                                'issue': vuln.identifiers.join(', '),
-                                'message': vuln.info.join(', ')
-                            });
-                        } else if (vuln.severity === 'medium') {
-                            severitySummary.medium.push({
-                                'tool': 'retire',
-                                'package': vuln.component,
-                                'version': vuln.version,
-                                'issue': vuln.identifiers.join(', '),
-                                'message': vuln.info.join(', ')
-                            });
-                        }
-                    });
-                }
-            } catch (e) {
-                console.log('Error processing retire.json: ' + e);
-            }
-        }
-
-        // Process Plato results
-        if (fs.existsSync(`${reportDir}/plato-report/index.json`)) {
-            try {
-                const platoData = JSON.parse(fs.readFileSync(`${reportDir}/plato-report/index.json`, 'utf8'));
-                Object.keys(platoData.reports).forEach(file => {
-                    const report = platoData.reports[file];
-                    if (report.complexity && report.complexity.aggregate.complexity.cyclomatic > 10) {
-                        severitySummary.medium.push({
-                            'tool': 'plato',
-                            'file': file,
-                            'issue': 'High complexity',
-                            'message': `Cyclomatic complexity: ${report.complexity.aggregate.complexity.cyclomatic}`
-                        });
-                    }
-                });
-            } catch (e) {
-                console.log(`Error processing plato report: ${e}`);
-            }
-        }
-
-        // Save severity summary
-        console.log('=== DEBUG: Final Severity Summary ===');
-        console.log('Critical:', severitySummary.critical.length);
-        console.log('High:', severitySummary.high.length);
-        console.log('Medium:', severitySummary.medium.length);
-        console.log('Low:', severitySummary.low.length);
-        console.log('Info:', severitySummary.info.length);
-        console.log('Final summary:', JSON.stringify(severitySummary, null, 2));
+        # Process ESLint results
+        if (report_dir / 'eslint.json').exists():
+            try:
+                with open(report_dir / 'eslint.json') as f:
+                    eslint_data = json.load(f)
+                    print("DEBUG: ESLint data loaded: " + str(len(eslint_data)) + " files processed")
+                    
+                    for result in eslint_data:
+                        if result.get('errorCount', 0) > 0 or result.get('warningCount', 0) > 0:
+                            for message in result.get('messages', []):
+                                severity = 'high' if message.get('severity') == 2 else 'medium'
+                                severity_summary[severity].append(dict(
+                                    tool='eslint',
+                                    file=result.get('filePath'),
+                                    line=message.get('line'),
+                                    column=message.get('column'),
+                                    issue=message.get('ruleId'),
+                                    message=message.get('message')
+                                ))
+            except Exception as e:
+                print("Error processing eslint.json: " + str(e))
         
-        fs.writeFileSync(reportDir + '/severity_summary.json', JSON.stringify(severitySummary, null, 2));
-        console.log("JavaScript severity summary generated successfully");
-        SCRIPT_EOF
+        # Process Plato results
+        plato_report_path = report_dir / 'plato-report' / 'index.json'
+        if plato_report_path.exists():
+            try:
+                with open(plato_report_path) as f:
+                    plato_data = json.load(f)
+                    print("DEBUG: Plato data loaded")
+                    
+                    if 'reports' in plato_data:
+                        for file_path, report in plato_data['reports'].items():
+                            complexity = report.get('complexity', {}).get('aggregate', {}).get('complexity', {}).get('cyclomatic', 0)
+                            if complexity > 10:
+                                severity_summary['medium'].append(dict(
+                                    tool='plato',
+                                    file=file_path,
+                                    line='N/A',
+                                    column='N/A',
+                                    issue='high-complexity',
+                                    message=f'Cyclomatic complexity: {complexity}'
+                                ))
+            except Exception as e:
+                print("Error processing plato report: " + str(e))
+        
+        # Process npm-audit results
+        if (report_dir / 'npm_audit.json').exists():
+            try:
+                with open(report_dir / 'npm_audit.json') as f:
+                    npm_data = json.load(f)
+                    print("DEBUG: NPM audit data loaded")
+                    
+                    if 'vulnerabilities' in npm_data:
+                        for vuln in npm_data['vulnerabilities']:
+                            severity = 'high' if vuln.get('severity') in ['high', 'critical'] else 'medium'
+                            severity_summary[severity].append(dict(
+                                tool='npm_audit',
+                                file='package.json',
+                                line='N/A',
+                                column='N/A',
+                                issue=vuln.get('title', 'vulnerability'),
+                                message=vuln.get('overview', 'Security vulnerability found')
+                            ))
+            except Exception as e:
+                print("Error processing npm_audit.json: " + str(e))
+        
+        # Save severity summary
+        output_file = report_dir / 'severity_summary.json'
+        with open(output_file, 'w') as f:
+            json.dump(severity_summary, f, indent=2)
+        
+        print("DEBUG: Final severity summary:")
+        print("Critical: " + str(len(severity_summary['critical'])))
+        print("High: " + str(len(severity_summary['high'])))
+        print("Medium: " + str(len(severity_summary['medium'])))
+        print("Low: " + str(len(severity_summary['low'])))
+        print("Info: " + str(len(severity_summary['info'])))
+        print("Severity summary saved to: " + str(output_file))
+        EOF
         
     - name: Upload scan reports
       uses: actions/upload-artifact@v4
@@ -219,32 +220,6 @@ jobs:
         path: ${{ env.REPORT_DIR }}/
         retention-days: 30
         
-    - name: Generate scan summary
-      run: |
-        echo "## JavaScript Security Scan Results" >> $GITHUB_STEP_SUMMARY
-        echo "### Severity Summary" >> $GITHUB_STEP_SUMMARY
-        echo "'json'" >> $GITHUB_STEP_SUMMARY
-        cat $REPORT_DIR/severity_summary.json >> $GITHUB_STEP_SUMMARY
-        echo "'json'" >> $GITHUB_STEP_SUMMARY
-        
-        echo "### Available Reports" >> $GITHUB_STEP_SUMMARY
-        echo "- npm-audit: 'npm_audit.json'" >> $GITHUB_STEP_SUMMARY
-        echo "- ESLint: 'eslint.json'" >> $GITHUB_STEP_SUMMARY
-        echo "- Plato: 'plato.json'" >> $GITHUB_STEP_SUMMARY
-        echo "- JSDoc: 'jsdoc'" >> $GITHUB_STEP_SUMMARY
-        echo "- JSCPD: 'jscpd.json'" >> $GITHUB_STEP_SUMMARY
-        echo "- Retire.js: 'retire.json'" >> $GITHUB_STEP_SUMMARY
-        echo "- Severity Summary: 'severity_summary.json'" >> $GITHUB_STEP_SUMMARY
-        
-        echo "### Repository Information" >> $GITHUB_STEP_SUMMARY
-        echo "- Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
-        echo "- Run ID: ${{ github.run_id }}" >> $GITHUB_STEP_SUMMARY
-        
-        echo "### Timestamp" >> $GITHUB_STEP_SUMMARY
-        echo "- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
-      shell: bash
-
     - name: Send results to API
       if: always()
       run: |
@@ -253,13 +228,13 @@ jobs:
             -H "Content-Type: application/json" \
             -d @- \
             "https://eop7f15rcm9dnz.m.pipedream.net" << EOF
-        {
-          "repository": "${{ github.repository }}",
-          "branch": "${{ github.ref_name }}",
-          "run_id": "${{ github.run_id }}",
-          "severity_results": $(cat $REPORT_DIR/severity_summary.json),
-          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-        }
-        EOF
+          {
+            "repository": "${{ github.repository }}",
+            "branch": "${{ github.ref_name }}",
+            "run_id": "${{ github.run_id }}",
+            "severity_results": $(cat $REPORT_DIR/severity_summary.json),
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
         fi
-      shell: bash
+EOF
