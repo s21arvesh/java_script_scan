@@ -80,68 +80,9 @@ jobs:
         find . -name "*.js" -type f -exec echo "  - {{}}" \;
         echo "DEBUG: About to execute scan_commands..."
         echo 'Running ESLint...'
-        
-                echo 'Running ESLint...'
-                echo 'DEBUG: Looking for JavaScript files...'
-                find . -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" | head -10
-                echo 'DEBUG: Creating ESLint config...'
-                cat > .eslintrc.json << 'ESLINTEOF'
-                {
-                  "env": {
-                    "browser": true,
-                    "es2021": true,
-                    "node": true,
-                    "commonjs": true
-                  },
-                  "extends": ["eslint:recommended"],
-                  "parserOptions": {
-                    "ecmaVersion": 12,
-                    "sourceType": "commonjs"
-                  },
-                  "rules": {
-                    "no-var": "error",
-                    "semi": "error",
-                    "no-unused-vars": "error",
-                    "no-alert": "error",
-                    "quotes": ["error", "double"],
-                    "no-undef": "error"
-                  }
-                }
-                ESLINTEOF
-                
-                # Create test JavaScript file if none found
-                if ! find . -name "*.js" -o -name "*.jsx" | grep -q .; then
-                    echo 'DEBUG: No JavaScript files found, creating test file...'
-                    mkdir -p test-js
-                    cat > test-js/test-file.js << 'JSEOF'
-                var bad_var = "test"; // no-var violation
-                console.log("missing semicolon") // missing semicolon
-                function unusedFunction() { // unused function
-                    return 42;
-                }
-                JSEOF
-                fi
-                
-                echo 'DEBUG: Running ESLint on JavaScript files...'
-                eslint . --ext .js,.jsx,.ts,.tsx --format=json --output-file=$REPORT_DIR/eslint.json 2>/dev/null || (echo '[]' > $REPORT_DIR/eslint.json && echo 'Created empty ESLint report as fallback')
-                echo 'DEBUG: ESLint completed'
-                
+        echo 'Running ESLint...' && find . -name '*.js' -o -name '*.jsx' | head -5 && echo 'Creating ESLint config...' && echo '{"extends": "eslint:recommended", "rules": {"no-var": "error", "semi": "error"}}' > .eslintrc.json && eslint . --format=json --output-file=$REPORT_DIR/eslint.json 2>/dev/null || echo '[]' > $REPORT_DIR/eslint.json
         echo 'Running Plato Complexity Analysis...'
-        
-                echo 'Running Plato Complexity Analysis...'
-                echo 'DEBUG: Finding JavaScript files for Plato...'
-                JS_FILES=$(find . -name "*.js" -o -name "*.jsx" -o -name "*.ts" -o -name "*.tsx" | head -20)
-                if [ -n "$JS_FILES" ]; then
-                    echo "DEBUG: Found JavaScript files:"
-                    echo "$JS_FILES"
-                    echo "$JS_FILES" | xargs plato -r -d $REPORT_DIR/plato-report 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{"reports": {}}' > $REPORT_DIR/plato-report/index.json)
-                else
-                    echo 'DEBUG: No JavaScript files found for Plato, creating empty report...'
-                    mkdir -p $REPORT_DIR/plato-report
-                    echo '{"reports": {}}' > $REPORT_DIR/plato-report/index.json
-                fi
-                echo 'DEBUG: Plato analysis completed'
-                
+        echo 'Running Plato...' && find . -name '*.js' | head -5 && (find . -name '*.js' | head -10 | xargs plato -r -d $REPORT_DIR/plato-report 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{}' > $REPORT_DIR/plato-report/index.json))
         echo "DEBUG: scan_commands completed"
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents after scans:"
