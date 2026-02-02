@@ -82,7 +82,9 @@ jobs:
         echo 'Running ESLint...'
         
                 echo 'Running ESLint...'
-                echo 'Creating test file with violations...' && echo 'var bad_var = "test"; console.log("missing semicolon")' > test-violations.js && eslint test-violations.js --format=json --output-file=$REPORT_DIR/eslint.json 2>&1 || (echo '[]' > $REPORT_DIR/eslint.json && echo 'Created empty ESLint report as fallback')
+                echo 'Creating test file with violations...' && echo 'var bad_var = "test"; console.log("missing semicolon")' > test-violations.js
+                eslint . --format=json --output-file=$REPORT_DIR/eslint.json 2>/dev/null || (echo '[]' > $REPORT_DIR/eslint.json && echo 'Created empty ESLint report as fallback')
+                rm -f test-violations.js
                 
         echo 'Running Plato Complexity Analysis...'
         
@@ -113,7 +115,7 @@ jobs:
         
     - name: Generate severity summary
       run: |
-        cat > process_severity.py << 'PYEOF'
+        python3 << 'PYEOF'
         import json
         import os
         from pathlib import Path
@@ -123,7 +125,33 @@ jobs:
         print('DEBUG: Report directory exists: ' + str(report_dir.exists()))
         print('DEBUG: Report directory contents: ' + str(list(report_dir.glob('*'))))
         
-        severity_summary = {'critical': [], 'high': [], 'medium': [], 'low': [], 'info': []}
+        # Check which report files exist
+        report_files = ['eslint.json', 'npm_audit.json', 'retire.json']
+        for file_name in report_files:
+            file_path = report_dir / file_name
+            if file_path.exists():
+                print('DEBUG: ' + file_name + ' exists with size: ' + str(file_path.stat().st_size))
+            else:
+                print('DEBUG: ' + file_name + ' does not exist')
+        
+        # Check plato report directory
+        plato_dir = report_dir / 'plato-report'
+        if plato_dir.exists():
+            print('DEBUG: plato-report directory exists')
+            index_file = plato_dir / 'index.json'
+            if index_file.exists():
+                print('DEBUG: plato-report/index.json exists with size: ' + str(index_file.stat().st_size))
+            else:
+                print('DEBUG: plato-report/index.json does not exist')
+        else:
+            print('DEBUG: plato-report directory does not exist')
+        
+        severity_summary = dict()
+        severity_summary['critical'] = []
+        severity_summary['high'] = []
+        severity_summary['medium'] = []
+        severity_summary['low'] = []
+        severity_summary['info'] = []
         
         # Process ESLint results
         if (report_dir / 'eslint.json').exists():
@@ -135,31 +163,196 @@ jobs:
                         if result.get('errorCount', 0) > 0 or result.get('warningCount', 0) > 0:
                             for message in result.get('messages', []):
                                 severity = 'high' if message.get('severity') == 2 else 'medium'
-                                severity_summary[severity].append({
-                                    'tool': 'eslint',
-                                    'file': result.get('filePath'),
-                                    'line': message.get('line'),
-                                    'column': message.get('column'),
-                                    'issue': message.get('ruleId'),
-                                    'message': message.get('message')
-                                })
+                                severity_summary[severity].append(dict(
+                                    tool='eslint',
+                                    file=result.get('filePath'),
+                                    line=message.get('line'),
+                                    column=message.get('column'),
+                                    issue=message.get('ruleId'),
+                                    message=message.get('message')
+                                ))
+                    print('DEBUG: ESLint severity summary: ' + str(severity_summary))
             except Exception as e:
                 print('Error processing eslint.json: ' + str(e))
+                print('DEBUG: ESLint file content preview:')
+                try:
+                    with open(report_dir / 'eslint.json', 'r') as f:
+                        content = f.read()[:500]  # First 500 chars
+                        print('DEBUG: ' + content)
+                except:
+                    print('DEBUG: Could not read eslint.json file')
+        
+        # Process NPM Audit results
+        if (report_dir / 'npm_audit.json').exists():
+            try:
+                with open(report_dir / 'npm_audit.json') as f:
+                    npm_audit_data = json.load(f)
+                    print('DEBUG: NPM Audit data loaded: ' + str(len(npm_audit_data.get('vulnerabilities', []))) + ' vulnerabilities found')
+                    print('DEBUG: NPM Audit raw data structure: ' + str(list(npm_audit_data.keys()) if isinstance(npm_audit_data, dict) else type(npm_audit_data)))
+                    
+                    vuln_count = 0
+                    for vuln in npm_audit_data.get('vulnerabilities', []):
+                        vuln_count += 1
+                        print('DEBUG: Processing vulnerability: ' + str(vuln))
+                        
+                        # Map npm-audit severity to our severity levels
+                        audit_severity = vuln.get('severity', 'unknown').lower()
+                        print('DEBUG: Audit severity: ' + audit_severity)
+                        if audit_severity in ['critical', 'high']:
+                            severity = 'critical'
+                        elif audit_severity in ['medium', 'moderate']:
+                            severity = 'high'
+                        elif audit_severity in ['low']:
+                            severity = 'medium'
+                        else:
+                            severity = 'low'
+                        
+                        print('DEBUG: Mapped severity: ' + severity)
+                        if severity in severity_summary:
+                            severity_summary[severity].append(dict(
+                                tool='npm_audit',
+                                file='package.json',
+                                issue=vuln.get('name', 'unknown-package'),
+                                message=vuln.get('title', 'Security vulnerability'),
+                                severity=vuln.get('severity', 'unknown'),
+                                url=vuln.get('url', 'No URL')
+                            ))
+                    print('DEBUG: Total vulnerabilities processed: ' + str(vuln_count))
+                    print('DEBUG: NPM Audit severity summary: ' + str(severity_summary))
+            except Exception as e:
+                print('Error processing npm_audit.json: ' + str(e))
+                print('DEBUG: NPM Audit file content preview:')
+                try:
+                    with open(report_dir / 'npm_audit.json', 'r') as f:
+                        content = f.read()[:500]  # First 500 chars
+                        print('DEBUG: ' + content)
+                except:
+                    print('DEBUG: Could not read npm_audit.json file')
+        else:
+            print('DEBUG: npm_audit.json file not found')
+        
+        # Process Retire.js results
+        if (report_dir / 'retire.json').exists():
+            try:
+                with open(report_dir / 'retire.json') as f:
+                    retire_data = json.load(f)
+                    print('DEBUG: Retire.js data loaded: ' + str(len(retire_data.get('data', []))) + ' components found')
+                    print('DEBUG: Retire.js raw data structure: ' + str(list(retire_data.keys()) if isinstance(retire_data, dict) else type(retire_data)))
+                    
+                    vuln_count = 0
+                    for component in retire_data.get('data', []):
+                        if 'vulnerabilities' in component and component['vulnerabilities']:
+                            print('DEBUG: Found vulnerable component: ' + component.get('component', 'unknown'))
+                            for vuln in component['vulnerabilities']:
+                                vuln_count += 1
+                                print('DEBUG: Processing vulnerability: ' + str(vuln))
+                                
+                                # Map retire severity to our severity levels
+                                retire_severity = vuln.get('severity', 'unknown').lower()
+                                print('DEBUG: Retire severity: ' + retire_severity)
+                                if retire_severity in ['critical', 'high']:
+                                    severity = 'critical'
+                                elif retire_severity in ['medium', 'moderate']:
+                                    severity = 'high'
+                                elif retire_severity in ['low']:
+                                    severity = 'medium'
+                                else:
+                                    severity = 'low'
+                                
+                                print('DEBUG: Mapped severity: ' + severity)
+                                if severity in severity_summary:
+                                    severity_summary[severity].append(dict(
+                                        tool='retire',
+                                        file=component.get('file', 'unknown'),
+                                        issue=component.get('component', 'unknown-component'),
+                                        message=vuln.get('identifiers', {}).get('summary', 'Security vulnerability'),
+                                        severity=vuln.get('severity', 'unknown'),
+                                        info=vuln.get('info', 'No additional info')
+                                    ))
+                    print('DEBUG: Total retire vulnerabilities processed: ' + str(vuln_count))
+                    print('DEBUG: Retire.js severity summary: ' + str(severity_summary))
+            except Exception as e:
+                print('Error processing retire.json: ' + str(e))
+                print('DEBUG: Retire.js file content preview:')
+                try:
+                    with open(report_dir / 'retire.json', 'r') as f:
+                        content = f.read()[:500]  # First 500 chars
+                        print('DEBUG: ' + content)
+                except:
+                    print('DEBUG: Could not read retire.json file')
+        else:
+            print('DEBUG: retire.json file not found')
+        
+        # Process Plato complexity results
+        if (plato_dir / 'index.json').exists():
+            try:
+                with open(plato_dir / 'index.json') as f:
+                    plato_data = json.load(f)
+                    print('DEBUG: Plato data loaded')
+                    print('DEBUG: Plato raw data structure: ' + str(list(plato_data.keys()) if isinstance(plato_data, dict) else type(plato_data)))
+                    
+                    # Process complexity reports if available
+                    reports = plato_data.get('reports', {})
+                    for file_path, metrics in reports.items():
+                        if isinstance(metrics, dict):
+                            complexity = metrics.get('complexity', {}).get('aggregate', {}).get('total', 0)
+                            maintainability = metrics.get('maintainability', 0)
+                            
+                            # High complexity issues
+                            if complexity > 10:
+                                severity_summary['high'].append(dict(
+                                    tool='plato',
+                                    file=file_path,
+                                    issue='high_complexity',
+                                    message='Cyclomatic complexity: ' + str(complexity)
+                                ))
+                            elif complexity > 5:
+                                severity_summary['medium'].append(dict(
+                                    tool='plato',
+                                    file=file_path,
+                                    issue='medium_complexity',
+                                    message='Cyclomatic complexity: ' + str(complexity)
+                                ))
+                            
+                            # Low maintainability issues
+                            if maintainability < 60:
+                                severity_summary['medium'].append(dict(
+                                    tool='plato',
+                                    file=file_path,
+                                    issue='low_maintainability',
+                                    message='Maintainability score: ' + str(maintainability)
+                                ))
+                            elif maintainability < 80:
+                                severity_summary['low'].append(dict(
+                                    tool='plato',
+                                    file=file_path,
+                                    issue='medium_maintainability',
+                                    message='Maintainability score: ' + str(maintainability)
+                                ))
+                    
+                    print('DEBUG: Plato severity summary: ' + str(severity_summary))
+            except Exception as e:
+                print('Error processing plato report: ' + str(e))
+                print('DEBUG: Plato file content preview:')
+                try:
+                    with open(plato_dir / 'index.json', 'r') as f:
+                        content = f.read()[:500]  # First 500 chars
+                        print('DEBUG: ' + content)
+                except:
+                    print('DEBUG: Could not read plato index.json file')
+        else:
+            print('DEBUG: plato-report/index.json file not found')
         
         # Save severity summary
         output_file = report_dir / 'severity_summary.json'
         with open(output_file, 'w') as f:
             json.dump(severity_summary, f, indent=2)
         
-        print('DEBUG: Final severity summary:')
-        print('Critical: ' + str(len(severity_summary['critical'])))
-        print('High: ' + str(len(severity_summary['high'])))
-        print('Medium: ' + str(len(severity_summary['medium'])))
-        print('Low: ' + str(len(severity_summary['low'])))
-        print('Info: ' + str(len(severity_summary['info'])))
+        print('=== FINAL SEVERITY SUMMARY ===')
+        for severity, issues in severity_summary.items():
+            print(str(severity) + ': ' + str(len(issues)) + ' issues')
         print('Severity summary saved to: ' + str(output_file))
         PYEOF
-        python3 process_severity.py
         
     - name: Upload scan reports
       uses: actions/upload-artifact@v4
