@@ -169,4 +169,3 @@ jobs:
             -d '{"repository":"${{ github.repository }}","branch":"${{ github.ref_name }}","run_id":"${{ github.run_id }}","severity_results":'$(cat $REPORT_DIR/severity_summary.json)',"timestamp":"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}' \
             "https://eop7f15rcm9dnz.m.pipedream.net"
         fi
-EOF
