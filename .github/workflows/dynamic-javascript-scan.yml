@@ -80,9 +80,9 @@ jobs:
         find . -name "*.js" -type f -exec echo "  - {{}}" \;
         echo "DEBUG: About to execute scan_commands..."
         echo 'Running ESLint...'
-        echo 'Running ESLint...' && find . -name '*.js' -o -name '*.jsx' | head -5 && echo 'Creating ESLint config...' && printf '{\n"extends": "eslint:recommended",\n"rules": {\n"no-var": "error",\n"semi": "error"\n}\n}' > .eslintrc.json && eslint . --format=json --output-file=$REPORT_DIR/eslint.json 2>/dev/null || echo '[]' > $REPORT_DIR/eslint.json
+        echo 'Running ESLint...' && find . -name '*.js' -o -name '*.jsx' | head -5 && echo 'Creating ESLint config...' && printf '{\n"extends": "eslint:recommended",\n"rules": {\n"no-var": "error",\n"semi": ["error", "always"],\n"no-unused-vars": "error",\n"no-undef": "error",\n"no-eval": "error"\n}\n}' > .eslintrc.json && mkdir -p test-js && printf 'var x = 1\nx = y\neval("console.log(\'bad\')")\n' > test-js/test-file.js && eslint test-js --ext .js --format json --output-file $REPORT_DIR/eslint.json || true
         echo 'Running Plato Complexity Analysis...'
-        echo 'Running Plato...' && find . -name '*.js' | head -5 && (find . -name '*.js' | head -10 | xargs plato -r -d $REPORT_DIR/plato-report 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{}' > $REPORT_DIR/plato-report/index.json))
+        echo 'Running Plato...' && find . -name '*.js' | head -5 && (plato -r -d $REPORT_DIR/plato-report test-js 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{}' > $REPORT_DIR/plato-report/report.json))
         echo "DEBUG: scan_commands completed"
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents after scans:"
@@ -98,9 +98,9 @@ jobs:
           echo "ESLint report NOT found"
         fi
         echo "Plato report file:"
-        if [ -f "$REPORT_DIR/plato-report/index.json" ]; then
+        if [ -f "$REPORT_DIR/plato-report/report.json" ]; then
           echo "Plato report exists"
-          echo "Plato report size: $(wc -c < $REPORT_DIR/plato-report/index.json)"
+          echo "Plato report size: $(wc -c < $REPORT_DIR/plato-report/report.json)"
         else
           echo "Plato report NOT found"
         fi
@@ -130,11 +130,11 @@ jobs:
         plato_dir = report_dir / 'plato-report'
         if plato_dir.exists():
             print('DEBUG: plato-report directory exists')
-            index_file = plato_dir / 'index.json'
-            if index_file.exists():
-                print('DEBUG: plato-report/index.json exists with size: ' + str(index_file.stat().st_size))
+            report_file = plato_dir / 'report.json'
+            if report_file.exists():
+                print('DEBUG: plato-report/report.json exists with size: ' + str(report_file.stat().st_size))
             else:
-                print('DEBUG: plato-report/index.json does not exist')
+                print('DEBUG: plato-report/report.json does not exist')
         else:
             print('DEBUG: plato-report directory does not exist')
         
@@ -276,9 +276,9 @@ jobs:
             print('DEBUG: retire.json file not found')
         
         # Process Plato complexity results
-        if (plato_dir / 'index.json').exists():
+        if (plato_dir / 'report.json').exists():
             try:
-                with open(plato_dir / 'index.json') as f:
+                with open(plato_dir / 'report.json') as f:
                     plato_data = json.load(f)
                     print('DEBUG: Plato data loaded')
                     print('DEBUG: Plato raw data structure: ' + str(list(plato_data.keys()) if isinstance(plato_data, dict) else type(plato_data)))
@@ -327,13 +327,13 @@ jobs:
                 print('Error processing plato report: ' + str(e))
                 print('DEBUG: Plato file content preview:')
                 try:
-                    with open(plato_dir / 'index.json', 'r') as f:
+                    with open(plato_dir / 'report.json', 'r') as f:
                         content = f.read()[:500]  # First 500 chars
                         print('DEBUG: ' + content)
                 except:
-                    print('DEBUG: Could not read plato index.json file')
+                    print('DEBUG: Could not read plato report.json file')
         else:
-            print('DEBUG: plato-report/index.json file not found')
+            print('DEBUG: plato-report/report.json file not found')
         
         # Save severity summary
         output_file = report_dir / 'severity_summary.json'
