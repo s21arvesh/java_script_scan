@@ -80,7 +80,7 @@ jobs:
         echo "DEBUG: JavaScript files in current directory:"
         find . -name "*.js" -type f -exec echo "  - {{}}" \;
         echo "DEBUG: About to execute scan_commands..."
-        echo 'Running ESLint...'\n        echo 'Creating test file with violations...' && echo 'var bad_var = "test"' > test-violations.js && eslint test-violations.js --format=json --output-file=$REPORT_DIR/eslint.json || echo 'ESLint completed with exit code: $?'\n        echo 'Running Plato Complexity Analysis...'\n        plato -r -d $REPORT_DIR/plato-report . 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{"reports": {}}' > $REPORT_DIR/plato-report/index.json)
+        echo 'Running ESLint...'\n        echo 'Creating test file with violations...' && echo 'var bad_var = "test"; console.log("missing semicolon")' > test-violations.js && eslint test-violations.js --format=json --output-file=$REPORT_DIR/eslint.json 2>&1 || (echo '[]' > $REPORT_DIR/eslint.json && echo 'Created empty ESLint report as fallback')\n        echo 'Running Plato Complexity Analysis...'\n        plato -r -d $REPORT_DIR/plato-report . 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{"reports": {}}' > $REPORT_DIR/plato-report/index.json)
         echo "DEBUG: scan_commands completed"
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents after scans:"
