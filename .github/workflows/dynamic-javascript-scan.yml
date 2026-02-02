@@ -355,15 +355,3 @@ jobs:
         name: javascript-scan-reports
         path: ${{ env.REPORT_DIR }}/
         retention-days: 30
-        
-    - name: Send results to API
-      if: always()
-      run: |
-        if [ -f "$REPORT_DIR/severity_summary.json" ]; then
-          SEVERITY_DATA=$(cat $REPORT_DIR/severity_summary.json)
-          TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          curl -X POST \
-            -H "Content-Type: application/json" \
-            -d "{"repository":"${{ github.repository }}","branch":"${{ github.ref_name }}","run_id":"${{ github.run_id }}","severity_results":${SEVERITY_DATA},"status":"success","duration_seconds":0,"timestamp":"${TIMESTAMP}","workflow_completed_at":"${TIMESTAMP}"}" \
-            "https://eop7f15rcm9dnz.m.pipedream.net"
-        fi
