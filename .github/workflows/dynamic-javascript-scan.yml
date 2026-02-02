@@ -157,7 +157,7 @@ jobs:
                                 severity = 'high' if message.get('severity') == 2 else 'medium'
                                 severity_summary[severity].append(dict(
                                     tool='eslint',
-                                    file=result.get('filePath'),
+                                    file='./' + result.get('filePath', '').lstrip('./'),
                                     line=message.get('line'),
                                     column=message.get('column'),
                                     issue=message.get('ruleId'),
@@ -203,7 +203,7 @@ jobs:
                         if severity in severity_summary:
                             severity_summary[severity].append(dict(
                                 tool='npm_audit',
-                                file='package.json',
+                                file='./package.json',
                                 issue=vuln.get('name', 'unknown-package'),
                                 message=vuln.get('title', 'Security vulnerability'),
                                 severity=vuln.get('severity', 'unknown'),
@@ -255,7 +255,7 @@ jobs:
                                 if severity in severity_summary:
                                     severity_summary[severity].append(dict(
                                         tool='retire',
-                                        file=component.get('file', 'unknown'),
+                                        file='./' + component.get('file', 'unknown').lstrip('./'),
                                         issue=component.get('component', 'unknown-component'),
                                         message=vuln.get('identifiers', {}).get('summary', 'Security vulnerability'),
                                         severity=vuln.get('severity', 'unknown'),
@@ -287,7 +287,7 @@ jobs:
                     reports = plato_data.get('reports', [])
                     for report_item in reports:
                         if isinstance(report_item, dict):
-                            file_path = report_item.get('info', {}).get('file', 'unknown')
+                            file_path = './' + report_item.get('info', {}).get('file', 'unknown').lstrip('./')
                             metrics = report_item
                             complexity = metrics.get('complexity', {}).get('methodAggregate', {}).get('cyclomatic', 0)
                             maintainability = metrics.get('maintainability', 0)
@@ -364,6 +364,6 @@ jobs:
           TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           curl -X POST \
             -H "Content-Type: application/json" \
-            -d "{"repository":"${{ github.repository }}","branch":"${{ github.ref_name }}","run_id":"${{ github.run_id }}","severity_results":${SEVERITY_DATA},"timestamp":"${TIMESTAMP}"}" \
+            -d "{"repository":"${{ github.repository }}","branch":"${{ github.ref_name }}","run_id":"${{ github.run_id }}","severity_results":${SEVERITY_DATA},"status":"success","duration_seconds":0,"timestamp":"${TIMESTAMP}","workflow_completed_at":"${TIMESTAMP}"}" \
             "https://eop7f15rcm9dnz.m.pipedream.net"
         fi
