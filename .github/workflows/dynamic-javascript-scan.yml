@@ -82,16 +82,7 @@ jobs:
         echo 'Running ESLint...'
         
                 echo 'Running ESLint...'
-                echo 'Creating test file with violations...' && cat > test-violations.js << 'EOF'
-var old_variable = "should use let";
-var missing_semicolon = "missing semicolon here"
-const unused_var = "never used";
-function badFunction() {
-    alert("bad practice");
-    return undefined_variable + 1;
-}
-EOF
-                eslint test-violations.js --format=json --output-file=$REPORT_DIR/eslint.json 2>&1 || (echo '[]' > $REPORT_DIR/eslint.json && echo 'Created empty ESLint report as fallback')
+                echo 'Creating test file with violations...' && echo 'var bad_var = "test"; console.log("missing semicolon")' > test-violations.js && eslint test-violations.js --format=json --output-file=$REPORT_DIR/eslint.json 2>&1 || (echo '[]' > $REPORT_DIR/eslint.json && echo 'Created empty ESLint report as fallback')
                 
         echo 'Running Plato Complexity Analysis...'
         
