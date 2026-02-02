@@ -204,6 +204,7 @@ jobs:
                             severity_summary[severity].append(dict(
                                 tool='npm_audit',
                                 file='./package.json',
+                                line=1,  # NPM Audit doesn't provide line numbers, use 1 as default
                                 issue=vuln.get('name', 'unknown-package'),
                                 message=vuln.get('title', 'Security vulnerability'),
                                 severity=vuln.get('severity', 'unknown'),
@@ -256,6 +257,7 @@ jobs:
                                     severity_summary[severity].append(dict(
                                         tool='retire',
                                         file='./' + component.get('file', 'unknown').lstrip('./'),
+                                        line=1,  # Retire.js doesn't provide line numbers, use 1 as default
                                         issue=component.get('component', 'unknown-component'),
                                         message=vuln.get('identifiers', {}).get('summary', 'Security vulnerability'),
                                         severity=vuln.get('severity', 'unknown'),
@@ -297,6 +299,7 @@ jobs:
                                 severity_summary['high'].append(dict(
                                     tool='plato',
                                     file=file_path,
+                                    line=1,  # Plato doesn't provide line numbers, use 1 as default
                                     issue='high_complexity',
                                     message='Cyclomatic complexity: ' + str(complexity)
                                 ))
@@ -304,15 +307,17 @@ jobs:
                                 severity_summary['medium'].append(dict(
                                     tool='plato',
                                     file=file_path,
+                                    line=1,  # Plato doesn't provide line numbers, use 1 as default
                                     issue='medium_complexity',
                                     message='Cyclomatic complexity: ' + str(complexity)
                                 ))
-                            
+
                             # Low maintainability issues
                             if maintainability < 60:
                                 severity_summary['medium'].append(dict(
                                     tool='plato',
                                     file=file_path,
+                                    line=1,  # Plato doesn't provide line numbers, use 1 as default
                                     issue='low_maintainability',
                                     message='Maintainability score: ' + str(maintainability)
                                 ))
@@ -320,11 +325,13 @@ jobs:
                                 severity_summary['low'].append(dict(
                                     tool='plato',
                                     file=file_path,
+                                    line=1,  # Plato doesn't provide line numbers, use 1 as default
                                     issue='medium_maintainability',
                                     message='Maintainability score: ' + str(maintainability)
                                 ))
                     
                     print('DEBUG: Plato severity summary: ' + str(severity_summary))
+                            
             except Exception as e:
                 print('Error processing plato report: ' + str(e))
                 print('DEBUG: Plato file content preview:')
