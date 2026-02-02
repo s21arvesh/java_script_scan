@@ -80,7 +80,7 @@ jobs:
         find . -name "*.js" -type f -exec echo "  - {{}}" \;
         echo "DEBUG: About to execute scan_commands..."
         echo 'Running ESLint...'
-        echo 'Running ESLint...' && find . -name '*.js' -o -name '*.jsx' | head -5 && echo 'Creating ESLint config...' && echo '{"extends": "eslint:recommended", "rules": {"no-var": "error", "semi": ["error", "always"], "no-unused-vars": "error", "no-undef": "error", "no-eval": "error"}}' > .eslintrc.json && mkdir -p test-js && echo 'var x = 1' > test-js/test-file.js && echo 'x = y' >> test-js/test-file.js && echo 'eval("bad")' >> test-js/test-file.js && eslint test-js --ext .js --format json --output-file $REPORT_DIR/eslint.json || true
+        echo 'Running ESLint...' && find . -name '*.js' -o -name '*.jsx' | head -5 && echo 'Creating ESLint config...' && echo '{"extends": "eslint:recommended", "rules": {"no-var": "error", "semi": ["error", "always"], "no-unused-vars": "error", "no-undef": "error", "no-eval": "error"}}' > .eslintrc.json && mkdir -p test-js && echo 'var x = 1' > test-js/test-file.js && echo 'x = y' >> test-js/test-file.js && echo 'eval("bad")' >> test-js/test-file.js && eslint test-js --ext .js --format json --output-file $REPORT_DIR/eslint.json && echo 'ESLint completed'
         echo 'Running Plato Complexity Analysis...'
         echo 'Running Plato...' && find . -name '*.js' | head -5 && (plato -r -d $REPORT_DIR/plato-report test-js 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{}' > $REPORT_DIR/plato-report/report.json))
         echo "DEBUG: scan_commands completed"
@@ -284,10 +284,12 @@ jobs:
                     print('DEBUG: Plato raw data structure: ' + str(list(plato_data.keys()) if isinstance(plato_data, dict) else type(plato_data)))
                     
                     # Process complexity reports if available
-                    reports = plato_data.get('reports', {})
-                    for file_path, metrics in reports.items():
-                        if isinstance(metrics, dict):
-                            complexity = metrics.get('complexity', {}).get('aggregate', {}).get('total', 0)
+                    reports = plato_data.get('reports', [])
+                    for report_item in reports:
+                        if isinstance(report_item, dict):
+                            file_path = report_item.get('info', {}).get('file', 'unknown')
+                            metrics = report_item
+                            complexity = metrics.get('complexity', {}).get('methodAggregate', {}).get('cyclomatic', 0)
                             maintainability = metrics.get('maintainability', 0)
                             
                             # High complexity issues
