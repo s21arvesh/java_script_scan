@@ -31,10 +31,10 @@ jobs:
         
     - name: Install dependencies
       run: |
-        npm install -g eslint plato retire jscpd jsdoc
+        npm install -g npm eslint@8 jscpd retire plato jsdoc
         echo "Verifying installations:"
-        eslint --version
-        plato --version
+        eslint --version || echo "eslint not available"
+        plato --version || echo "plato not available"
         retire --version || echo "retire not available"
         jscpd --version || echo "jscpd not available"
         jsdoc --version || echo "jsdoc not available"
@@ -80,18 +80,18 @@ jobs:
         echo "DEBUG: JavaScript files in current directory:"
         find . -name "*.js" -type f -exec echo "  - {{}}" \;
         echo "DEBUG: About to execute scan_commands..."
-                eslint . -f json -o $REPORT_DIR/eslint.json || true
-
-        npm install || true
+                npm install || true
         npm audit --json > $REPORT_DIR/npm_audit.json || true
 
-        retire --outputformat json --outputpath $REPORT_DIR/retire.json || true
+        eslint . -f json -o $REPORT_DIR/eslint.json || true
 
         jscpd . --reporters json --output $REPORT_DIR/jscpd.json || true
 
-        jsdoc . -X > $REPORT_DIR/jsdoc.json || true
+        retire --outputformat json --outputpath $REPORT_DIR/retire.json || true
 
         plato -r -d $REPORT_DIR/plato-report . || true
+
+        jsdoc . -X > $REPORT_DIR/jsdoc.json || true
         echo "DEBUG: scan_commands completed"
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents after scans:"
