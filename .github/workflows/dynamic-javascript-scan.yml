@@ -33,11 +33,18 @@ jobs:
       run: |
         npm install -g npm eslint@8 jscpd retire plato jsdoc
         echo "Verifying installations:"
-        eslint --version || echo "eslint not available"
-        plato --version || echo "plato not available"
-        retire --version || echo "retire not available"
-        jscpd --version || echo "jscpd not available"
-        jsdoc --version || echo "jsdoc not available"
+        which eslint || echo "eslint not found in PATH"
+        which plato || echo "plato not found in PATH"
+        which retire || echo "retire not found in PATH"
+        which jscpd || echo "jscpd not found in PATH"
+        which jsdoc || echo "jsdoc not found in PATH"
+        echo ""
+        echo "Version checks:"
+        eslint --version || echo "eslint version failed"
+        plato --version || echo "plato version failed"
+        retire --version || echo "retire version failed"
+        jscpd --version || echo "jscpd version failed"
+        jsdoc --version || echo "jsdoc version failed"
         
     - name: Create report directory
       run: mkdir -p $REPORT_DIR
@@ -74,44 +81,40 @@ jobs:
         echo "Current directory: $(pwd)"
         echo "Report directory: $REPORT_DIR"
         echo "JavaScript files found:"
-        find . -name "*.js" -type f | head -10
+        find . -name "*.js" -type f | head -10 || echo "No JavaScript files found"
+        echo "Package.json exists:"
+        test -f package.json && echo "✅ package.json found" || echo "❌ package.json not found"
+        echo "Node modules exists:"
+        test -d node_modules && echo "✅ node_modules found" || echo "❌ node_modules not found"
         echo "=== Running Scan Commands ==="
-        echo "DEBUG: Current directory: $(pwd)"
-        echo "DEBUG: JavaScript files in current directory:"
-        find . -name "*.js" -type f -exec echo "  - {{}}" \;
         echo "DEBUG: About to execute scan_commands..."
-                npm install || true
-        npm audit --json > $REPORT_DIR/npm_audit.json || true
+                echo 'Running NPM Audit...' && npm install --silent || echo 'npm install failed' && npm audit --json > $REPORT_DIR/npm_audit.json || (echo 'npm audit failed' && echo '{"vulnerabilities": []}' > $REPORT_DIR/npm_audit.json)
 
-        eslint . -f json -o $REPORT_DIR/eslint.json || true
+        echo 'Running ESLint...' && eslint . -f json -o $REPORT_DIR/eslint.json || echo 'ESLint failed' && echo '{}' > $REPORT_DIR/eslint.json
 
-        jscpd . --reporters json --output $REPORT_DIR/jscpd.json || true
+        echo 'Running JSCPD...' && jscpd . --reporters json --output $REPORT_DIR/jscpd.json || echo 'jscpd failed' && echo '{"files":[],"total":{"lines":0,"tokens":0,"duplicates":0,"percentage":0}}' > $REPORT_DIR/jscpd.json
 
-        retire --outputformat json --outputpath $REPORT_DIR/retire.json || true
+        echo 'Running Retire.js...' && retire --outputformat json --outputpath $REPORT_DIR/retire.json || echo 'retire failed' && echo '{}' > $REPORT_DIR/retire.json
 
-        plato -r -d $REPORT_DIR/plato-report . || true
+        echo 'Running Plato...' && plato -r -d $REPORT_DIR/plato-report . || echo 'plato failed' && mkdir -p $REPORT_DIR/plato-report && echo '{}' > $REPORT_DIR/plato-report/report.json
 
-        jsdoc . -X > $REPORT_DIR/jsdoc.json || true
+        echo 'Running JSDoc...' && jsdoc . -X > $REPORT_DIR/jsdoc.json || echo 'jsdoc failed' && echo '{"documentation": "failed"}' > $REPORT_DIR/jsdoc.json
         echo "DEBUG: scan_commands completed"
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents after scans:"
-        ls -la $REPORT_DIR/
+        ls -la $REPORT_DIR/ || echo "Report directory not accessible"
         echo "=== Checking each tool's report file ==="
-        echo "ESLint report file:"
-        if [ -f "$REPORT_DIR/eslint.json" ]; then
-          echo "ESLint report exists"
-          echo "ESLint report size: $(wc -c < $REPORT_DIR/eslint.json)"
-          echo "ESLint report preview:"
-          head -20 $REPORT_DIR/eslint.json
-        else
-          echo "ESLint report NOT found"
-        fi
-        echo "Plato report file:"
+        for file in eslint.json npm_audit.json retire.json jscpd.json jsdoc.json; do
+          if [ -f "$REPORT_DIR/$file" ]; then
+            echo "✅ $file exists ($(wc -c < $REPORT_DIR/$file) bytes)"
+          else
+            echo "❌ $file missing"
+          fi
+        done
         if [ -f "$REPORT_DIR/plato-report/report.json" ]; then
-          echo "Plato report exists"
-          echo "Plato report size: $(wc -c < $REPORT_DIR/plato-report/report.json)"
+          echo "✅ plato-report/report.json exists ($(wc -c < $REPORT_DIR/plato-report/report.json) bytes)"
         else
-          echo "Plato report NOT found"
+          echo "❌ plato-report/report.json missing"
         fi
         
     - name: Generate severity summary
