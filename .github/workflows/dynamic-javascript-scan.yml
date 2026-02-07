@@ -188,7 +188,7 @@ jobs:
                 with open(retire_file) as f:
                     retire_data = json.load(f)
                     vuln_count = 0
-                    for component in retire_data.get('data', []):
+                    for component in retire_data.get('results', []):
                         if 'vulnerabilities' in component and component['vulnerabilities']:
                             for vuln in component['vulnerabilities']:
                                 vuln_count += 1
@@ -205,7 +205,7 @@ jobs:
                                 if severity in severity_summary:
                                     severity_summary[severity].append(dict(
                                         tool='retire',
-                                        file='./' + component.get('file', 'unknown').lstrip('./'),
+                                        file='./' + component.get('file', component.get('component', 'unknown')).lstrip('./'),
                                         line=1,
                                         issue=component.get('component', 'unknown-component'),
                                         message=vuln.get('identifiers', {}).get('summary', 'Security vulnerability'),
