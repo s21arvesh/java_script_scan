@@ -173,7 +173,7 @@ jobs:
                                 tool='npm_audit',
                                 file='./package.json',
                                 line=1,
-                                issue=pkg,
+                                issue=vuln.get('name', pkg),
                                 message=vuln.get('title', 'Security vulnerability'),
                                 severity=vuln.get('severity', 'unknown'),
                                 url=vuln.get('url', 'No URL')
