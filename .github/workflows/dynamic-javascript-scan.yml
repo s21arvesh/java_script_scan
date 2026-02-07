@@ -89,25 +89,25 @@ jobs:
         test -d node_modules && echo "✅ node_modules found" || echo "❌ node_modules not found"
         echo "=== Running Scan Commands ==="
         echo "DEBUG: About to execute scan_commands..."
-        # NPM Audit
+                # NPM Audit
         npm audit --json > $REPORT_DIR/npm_audit.json || true
 
-# ESLint
+        # ESLint
         eslint . -f json -o $REPORT_DIR/eslint.json || true
 
-# JSCPD (FIX OUTPUT PATH)
+        # JSCPD (FIX OUTPUT PATH)
         mkdir -p $REPORT_DIR/jscpd
         jscpd . --reporters json --output $REPORT_DIR/jscpd || true
         mv $REPORT_DIR/jscpd/jscpd-report.json $REPORT_DIR/jscpd.json || true
         rm -rf $REPORT_DIR/jscpd
 
-# Retire.js (FORCE JS scan)
+        # Retire.js (FORCE JS scan)
         retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
 
-# Plato
+        # Plato
         plato -r -d $REPORT_DIR/plato-report . || true
 
-# JSDoc (JSON MODE)
+        # JSDoc (JSON MODE)
         jsdoc . -X > $REPORT_DIR/jsdoc.json || true
         echo "DEBUG: scan_commands completed"
         echo "=== Scan Commands Completed ==="
