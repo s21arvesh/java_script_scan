@@ -31,7 +31,7 @@ jobs:
         
     - name: Install dependencies
       run: |
-                npm install -g npm eslint@8 jscpd retire plato jsdoc
+        npm install -g npm eslint@8 jscpd retire plato jsdoc
         npm install || true
         echo "Verifying installations:"
         which eslint || echo "eslint not found in PATH"
