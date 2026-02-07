@@ -155,7 +155,8 @@ jobs:
                 with open(npm_audit_file) as f:
                     npm_audit_data = json.load(f)
                     vuln_count = 0
-                    for vuln in npm_audit_data.get('vulnerabilities', []):
+                    vulns = npm_audit_data.get('vulnerabilities', {})
+                    for pkg, vuln in vulns.items():
                         vuln_count += 1
                         audit_severity = vuln.get('severity', 'unknown').lower()
                         if audit_severity in ['critical', 'high']:
@@ -172,7 +173,7 @@ jobs:
                                 tool='npm_audit',
                                 file='./package.json',
                                 line=1,
-                                issue=vuln.get('name', 'unknown-package'),
+                                issue=pkg,
                                 message=vuln.get('title', 'Security vulnerability'),
                                 severity=vuln.get('severity', 'unknown'),
                                 url=vuln.get('url', 'No URL')
