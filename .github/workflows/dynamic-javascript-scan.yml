@@ -186,30 +186,34 @@ jobs:
                 with open(retire_file) as f:
                     retire_data = json.load(f)
                     vuln_count = 0
-                    for component in retire_data.get('results', []):
-                        if 'vulnerabilities' in component and component['vulnerabilities']:
-                            for vuln in component['vulnerabilities']:
-                                vuln_count += 1
-                                retire_severity = vuln.get('severity', 'unknown').lower()
-                                if retire_severity in ['critical', 'high']:
-                                    severity = 'critical'
-                                elif retire_severity in ['medium', 'moderate']:
-                                    severity = 'high'
-                                elif retire_severity in ['low']:
-                                    severity = 'medium'
-                                else:
-                                    severity = 'low'
-                                
-                                if severity in severity_summary:
-                                    severity_summary[severity].append(dict(
-                                        tool='retire',
-                                        file='./' + component.get('file', component.get('component', 'unknown')).lstrip('./'),
-                                        line=1,
-                                        issue=component.get('component', 'unknown-component'),
-                                        message=vuln.get('identifiers', {}).get('summary', 'Security vulnerability'),
-                                        severity=vuln.get('severity', 'unknown'),
-                                        info=vuln.get('info', 'No additional info')
-                                    ))
+                    # FIX 1 & 2: Handle correct Retire.js JSON structure
+                    for file_entry in retire_data.get('data', []):
+                        for component in file_entry.get('results', []):
+                            if 'vulnerabilities' in component and component['vulnerabilities']:
+                                for vuln in component['vulnerabilities']:
+                                    vuln_count += 1
+                                    # FIX 3: Add fallback severity
+                                    retire_severity = vuln.get('severity', 'medium').lower()
+                                    if retire_severity in ['critical', 'high']:
+                                        severity = 'critical'
+                                    elif retire_severity in ['medium', 'moderate']:
+                                        severity = 'high'
+                                    elif retire_severity in ['low']:
+                                        severity = 'medium'
+                                    else:
+                                        severity = 'low'
+                                    
+                                    if severity in severity_summary:
+                                        severity_summary[severity].append(dict(
+                                            tool='retire',
+                                            # FIX 2: Use correct file path from file_entry
+                                            file='./' + file_entry.get('file', 'unknown').lstrip('./'),
+                                            line=1,
+                                            issue=component.get('component', 'unknown-component'),
+                                            message=vuln.get('identifiers', {}).get('summary', 'Security vulnerability'),
+                                            severity=vuln.get('severity', 'medium'),
+                                            info=vuln.get('info', 'No additional info')
+                                        ))
             except Exception as e:
                 print('Error processing retire.json: ' + str(e))
 
