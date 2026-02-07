@@ -262,6 +262,11 @@ jobs:
             except Exception as e:
                 print('Error processing plato report: ' + str(e))
         
+        # Debug: Check file existence
+        for f in ['npm_audit.json', 'retire.json', 'jscpd-report.json', 'jsdoc.json']:
+            p = report_dir / f
+            print(f, 'exists:', p.exists(), 'size:', p.stat().st_size if p.exists() else 0)
+        
         # Process JSCPD results
         jscpd_file = report_dir / 'jscpd-report.json'
         if jscpd_file.exists() and jscpd_file.stat().st_size > 0:
@@ -292,14 +297,13 @@ jobs:
                 with open(report_dir / 'jsdoc.json') as f:
                     jsdoc_data = json.load(f)
                     
-                    if isinstance(jsdoc_data, dict) and jsdoc_data:
-                        severity_summary['info'].append(dict(
-                            tool='jsdoc',
-                            file='./',
-                            line=1,
-                            issue='documentation_generated',
-                            message='JSDoc documentation generated successfully'
-                        ))
+                    severity_summary['info'].append(dict(
+                        tool='jsdoc',
+                        file='./',
+                        line=1,
+                        issue='documentation_scan',
+                        message=f'JSDoc scanned {len(jsdoc_data)} symbols'
+                    ))
             except Exception as e:
                 print('Error processing jsdoc.json: ' + str(e))
         
