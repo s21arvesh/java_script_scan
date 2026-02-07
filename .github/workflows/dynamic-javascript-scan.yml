@@ -82,6 +82,7 @@ jobs:
         echo "Report directory: $REPORT_DIR"
         echo "JavaScript files found:"
         find . -name "*.js" -type f | head -10 || echo "No JavaScript files found"
+        test "$(find . -name '*.js' | wc -l)" -gt 0 || echo "❌ No JS files for Plato"
         echo "Package.json exists:"
         test -f package.json && echo "✅ package.json found" || echo "❌ package.json not found"
         echo "Node modules exists:"
@@ -101,7 +102,9 @@ jobs:
         retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
 
         # Plato
-        plato -r -d $REPORT_DIR/plato-report --reporter json . || true
+        plato -r -d $REPORT_DIR/plato-report . || true
+        ls -la $REPORT_DIR/plato-report || true
+        cat $REPORT_DIR/plato-report/report.json | head -20 || echo "❌ Plato report.json missing"
 
         # JSDoc (JSON MODE)
         jsdoc . -X > $REPORT_DIR/jsdoc.json || true
