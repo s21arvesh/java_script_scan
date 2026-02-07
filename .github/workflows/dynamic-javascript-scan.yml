@@ -223,13 +223,16 @@ jobs:
             try:
                 with open(plato_report_file) as f:
                     plato_data = json.load(f)
-                    reports = plato_data.get('reports', [])
-                    for report_item in reports:
+                    # FIX 1-4: Handle correct Plato JSON structure
+                    reports = plato_data.get('reports', {})
+                    for file_path, report_item in reports.items():
                         if isinstance(report_item, dict):
-                            file_path = './' + report_item.get('info', {}).get('file', 'unknown').lstrip('./')
-                            metrics = report_item
-                            complexity = metrics.get('complexity', {}).get('methodAggregate', {}).get('cyclomatic', 0)
-                            maintainability = metrics.get('maintainability', 0)
+                            # FIX 2: Use correct file path from iteration key
+                            file_path = './' + file_path.lstrip('./')
+                            # FIX 3: Use report_item for maintainability
+                            maintainability = report_item.get('maintainability', 0)
+                            # FIX 4: Use correct complexity path
+                            complexity = report_item.get('complexity', {}).get('aggregate', {}).get('cyclomatic', 0)
 
                             # Map complexity values to severity
                             if complexity > 15:
