@@ -1,0 +1,14 @@
+{
+  "name": "vulnerable-node-sample",
+  "version": "1.0.0",
+  "description": "Sample project to test security and quality tools",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "express": "4.16.0",
+    "lodash": "4.17.11",
+    "request": "2.88.0"
+  }
+}
