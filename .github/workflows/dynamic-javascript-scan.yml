@@ -32,7 +32,7 @@ jobs:
     - name: Install dependencies
       run: |
         npm install -g npm eslint@8 jscpd retire plato jsdoc
-        npm install || true
+npm install || true
         echo "Verifying installations:"
         which eslint || echo "eslint not found in PATH"
         which plato || echo "plato not found in PATH"
@@ -89,26 +89,27 @@ jobs:
         test -d node_modules && echo "✅ node_modules found" || echo "❌ node_modules not found"
         echo "=== Running Scan Commands ==="
         echo "DEBUG: About to execute scan_commands..."
-                # NPM Audit
-        npm audit --json > $REPORT_DIR/npm_audit.json || true
+        echo "Running npm audit..."
+npm audit --json > $REPORT_DIR/npm_audit.json || true
 
-        # ESLint
-        eslint . -f json -o $REPORT_DIR/eslint.json || true
+echo "Running ESLint..."
+eslint . -f json -o $REPORT_DIR/eslint.json || true
 
-        # JSCPD (FIX OUTPUT PATH)
-        mkdir -p $REPORT_DIR/jscpd
-        jscpd . --reporters json --output $REPORT_DIR/jscpd || true
-        mv $REPORT_DIR/jscpd/jscpd-report.json $REPORT_DIR/jscpd.json || true
-        rm -rf $REPORT_DIR/jscpd
+echo "Running JSCPD..."
+jscpd \
+  --languages javascript \
+  --reporters json \
+  --output $REPORT_DIR/jscpd.json \
+  . || true
 
-        # Retire.js (FORCE JS scan)
-        retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
+echo "Running Retire.js..."
+retire --outputformat json --outputpath $REPORT_DIR/retire.json || true
 
-        # Plato
-        plato -r -d $REPORT_DIR/plato-report . || true
+echo "Running Plato..."
+plato -r -d $REPORT_DIR/plato-report . || true
 
-        # JSDoc (JSON MODE)
-        jsdoc . -X > $REPORT_DIR/jsdoc.json || true
+echo "Running JSDoc..."
+jsdoc -X -r . > $REPORT_DIR/jsdoc.json || true
         echo "DEBUG: scan_commands completed"
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents after scans:"
