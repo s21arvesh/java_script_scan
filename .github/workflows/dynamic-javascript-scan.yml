@@ -92,7 +92,7 @@ jobs:
         npm audit --json > $REPORT_DIR/npm_audit.json || true
 
         # ESLint
-        eslint . -f json -o $REPORT_DIR/eslint.json || true
+        eslint . --ext .js --max-warnings=0 --no-eslintrc -f json -o $REPORT_DIR/eslint.json || true
 
         # JSCPD (FIX OUTPUT PATH)
         mkdir -p $REPORT_DIR/jscpd
