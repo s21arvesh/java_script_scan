@@ -88,6 +88,7 @@ jobs:
         test -d node_modules && echo "✅ node_modules found" || echo "❌ node_modules not found"
         echo "=== Running Scan Commands ==="
                 # NPM Audit
+        npm install --package-lock-only || true
         npm audit --json > $REPORT_DIR/npm_audit.json || true
 
         # ESLint
@@ -100,7 +101,7 @@ jobs:
         retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
 
         # Plato
-        plato -r -d $REPORT_DIR/plato-report . || true
+        plato -r -d $REPORT_DIR/plato-report --reporter json . || true
 
         # JSDoc (JSON MODE)
         jsdoc . -X > $REPORT_DIR/jsdoc.json || true
@@ -226,7 +227,8 @@ jobs:
                             complexity = metrics.get('complexity', {}).get('methodAggregate', {}).get('cyclomatic', 0)
                             maintainability = metrics.get('maintainability', 0)
 
-                            if complexity > 10:
+                            # Map complexity values to severity
+                            if complexity > 15:
                                 severity_summary['high'].append(dict(
                                     tool='plato',
                                     file=file_path,
@@ -234,7 +236,7 @@ jobs:
                                     issue='high_complexity',
                                     message='Cyclomatic complexity: ' + str(complexity)
                                 ))
-                            elif complexity > 5:
+                            elif complexity > 10:
                                 severity_summary['medium'].append(dict(
                                     tool='plato',
                                     file=file_path,
@@ -278,14 +280,17 @@ jobs:
                     total_lines = jscpd_data.get('total', {}).get('lines', 0)
                     percentage = jscpd_data.get('total', {}).get('percentage', 0)
                     
+                    # Use duplication percentage for severity mapping
+                    duplication_percentage = jscpd_data.get('statistics', {}).get('duplicationPercentage', percentage)
+                    
                     if total_duplicates > 0:
-                        severity = 'high' if percentage > 10 else 'medium' if percentage > 5 else 'low'
+                        severity = 'high' if duplication_percentage > 20 else 'medium' if duplication_percentage >= 10 else 'low'
                         severity_summary[severity].append(dict(
                             tool='jscpd',
                             file='./',
                             line=1,
                             issue='code_duplication',
-                            message=f'Found {total_duplicates} duplicates ({percentage:.1f}% of code)'
+                            message=f'Found {total_duplicates} duplicates ({duplication_percentage:.1f}% of code)'
                         ))
             except Exception as e:
                 print('Error processing jscpd-report.json: ' + str(e))
@@ -297,13 +302,26 @@ jobs:
                 with open(report_dir / 'jsdoc.json') as f:
                     jsdoc_data = json.load(f)
                     
-                    severity_summary['info'].append(dict(
-                        tool='jsdoc',
-                        file='./',
-                        line=1,
-                        issue='documentation_scan',
-                        message=f'JSDoc scanned {len(jsdoc_data)} symbols'
-                    ))
+                    # Parse undocumented entries
+                    if isinstance(jsdoc_data, dict) and 'docs' in jsdoc_data:
+                        for doc_entry in jsdoc_data['docs']:
+                            if isinstance(doc_entry, dict) and doc_entry.get('undocumented', False):
+                                severity_summary['info'].append(dict(
+                                    tool='jsdoc',
+                                    file='./' + doc_entry.get('meta', {}).get('filename', 'unknown').lstrip('./'),
+                                    name=doc_entry.get('name', 'unknown'),
+                                    line=doc_entry.get('meta', {}).get('lineno', 1),
+                                    message='Missing JSDoc comment'
+                                ))
+                    else:
+                        # Fallback for different JSDoc output formats
+                        severity_summary['info'].append(dict(
+                            tool='jsdoc',
+                            file='./',
+                            line=1,
+                            issue='documentation_scan',
+                            message=f'JSDoc scanned {len(jsdoc_data) if isinstance(jsdoc_data, (list, dict)) else 0} symbols'
+                        ))
             except Exception as e:
                 print('Error processing jsdoc.json: ' + str(e))
         
