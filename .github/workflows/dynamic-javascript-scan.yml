@@ -31,11 +31,13 @@ jobs:
         
     - name: Install dependencies
       run: |
-        npm install -g eslint plato retire
+        npm install -g eslint plato retire jscpd jsdoc
         echo "Verifying installations:"
         eslint --version
         plato --version
         retire --version || echo "retire not available"
+        jscpd --version || echo "jscpd not available"
+        jsdoc --version || echo "jsdoc not available"
         
     - name: Create report directory
       run: mkdir -p $REPORT_DIR
@@ -78,18 +80,19 @@ jobs:
         echo "DEBUG: JavaScript files in current directory:"
         find . -name "*.js" -type f -exec echo "  - {{}}" \;
         echo "DEBUG: About to execute scan_commands..."
-        echo 'Running NPM Audit...'
-        echo 'Running NPM Audit...' && (if [ -f 'package.json' ]; then npm install --silent && npm audit --json > $REPORT_DIR/npm_audit.json || true; else printf '{\n"name": "vulnerable-node-app",\n"version": "1.0.0",\n"dependencies": {\n"express": "4.16.0",\n"lodash": "4.17.11",\n"request": "2.88.0",\n"axios": "0.19.0",\n"moment": "2.24.0"\n},\n"devDependencies": {\n"nodemon": "2.0.0"\n}\n}' > package.json && npm install --silent && npm audit --json > $REPORT_DIR/npm_audit.json || true; fi)
-        echo 'Running ESLint...'
-        echo 'Running ESLint...' && find . -name '*.js' -o -name '*.jsx' | head -5 && echo 'Creating ESLint config...' && echo '{"extends": "eslint:recommended", "rules": {"no-var": "error", "semi": ["error", "always"], "no-unused-vars": "error", "no-undef": "error", "no-eval": "error"}}' > .eslintrc.json && mkdir -p test-js && echo 'var x = 1;' > test-js/test-file.js && echo 'x = y;' >> test-js/test-file.js && echo 'eval("bad");' >> test-js/test-file.js && echo 'DEBUG: Test file contents:' && cat test-js/test-file.js && echo 'DEBUG: Running ESLint on test file...' && eslint test-js --ext .js --format json --output-file $REPORT_DIR/eslint.json && echo 'DEBUG: ESLint output:' && cat $REPORT_DIR/eslint.json && echo 'ESLint completed'
-        echo 'Running JSCPD Copy/Paste Detector...'
-        echo 'Running JSCPD...' && (if [ -d 'test-js' ]; then jscpd test-js --output json --output-path $REPORT_DIR/jscpd.json 2>/dev/null || echo '{"files":[],"total":{"lines":0,"tokens":0,"duplicates":0,"percentage":0}}' > $REPORT_DIR/jscpd.json; else echo '{"files":[],"total":{"lines":0,"tokens":0,"duplicates":0,"percentage":0}}' > $REPORT_DIR/jscpd.json; fi)
-        echo 'Running Retire.js Scanner...'
-        echo 'Running Retire.js...' && (if [ -d 'node_modules' ]; then retire --outputformat json --outputpath $REPORT_DIR/retire.json 2>/dev/null || echo '{}' > $REPORT_DIR/retire.json; else mkdir -p node_modules/test-lib && echo '{}' > $REPORT_DIR/retire.json; fi)
-        echo 'Running Plato Complexity Analysis...'
-        echo 'Running Plato...' && find . -name '*.js' | head -5 && (plato -r -d $REPORT_DIR/plato-report test-js 2>/dev/null || (mkdir -p $REPORT_DIR/plato-report && echo '{}' > $REPORT_DIR/plato-report/report.json))
-        echo 'Running JSDoc Documentation Generator...'
-        echo 'Running JSDoc...' && (if [ -d 'test-js' ]; then jsdoc test-js -d $REPORT_DIR/jsdoc-report 2>/dev/null || (mkdir -p $REPORT_DIR/jsdoc-report && echo '{"documentation": "generated"}' > $REPORT_DIR/jsdoc.json); else mkdir -p $REPORT_DIR/jsdoc-report && echo '{"documentation": "generated"}' > $REPORT_DIR/jsdoc.json; fi)
+        # NPM Audit
+        npm install || true
+npm audit --json > $REPORT_DIR/npm_audit.json || true
+        # ESLint
+        eslint . -f json -o $REPORT_DIR/eslint.json || true
+        # JSCPD Copy/Paste Detector
+        jscpd . --reporters json --output $REPORT_DIR/jscpd.json || true
+        # Retire.js Scanner
+        retire --outputformat json --outputpath $REPORT_DIR/retire.json || true
+        # Plato Complexity Analysis
+        plato -r -d $REPORT_DIR/plato-report . || true
+        # JSDoc Documentation Generator
+        jsdoc . -X > $REPORT_DIR/jsdoc.json || true
         echo "DEBUG: scan_commands completed"
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents after scans:"
@@ -125,7 +128,7 @@ jobs:
         print('DEBUG: Report directory contents: ' + str(list(report_dir.glob('*'))))
         
         # Check which report files exist
-        report_files = ['eslint.json', 'npm_audit.json', 'retire.json']
+        report_files = ['eslint.json', 'npm_audit.json', 'retire.json', 'jscpd.json', 'jsdoc.json']
         for file_name in report_files:
             file_path = report_dir / file_name
             if file_path.exists():
@@ -350,6 +353,59 @@ jobs:
                     print('DEBUG: Could not read plato report.json file')
         else:
             print('DEBUG: plato-report/report.json file not found')
+        
+        # Process JSCPD results
+        if (report_dir / 'jscpd.json').exists():
+            try:
+                with open(report_dir / 'jscpd.json') as f:
+                    jscpd_data = json.load(f)
+                    print('DEBUG: JSCPD data loaded')
+                    print('DEBUG: JSCPD raw data structure: ' + str(list(jscpd_data.keys()) if isinstance(jscpd_data, dict) else type(jscpd_data)))
+                    
+                    # Process duplication results
+                    total_duplicates = jscpd_data.get('total', {}).get('duplicates', 0)
+                    total_lines = jscpd_data.get('total', {}).get('lines', 0)
+                    percentage = jscpd_data.get('total', {}).get('percentage', 0)
+                    
+                    if total_duplicates > 0:
+                        severity = 'high' if percentage > 10 else 'medium' if percentage > 5 else 'low'
+                        severity_summary[severity].append(dict(
+                            tool='jscpd',
+                            file='./',
+                            line=1,
+                            issue='code_duplication',
+                            message=f'Found {total_duplicates} duplicates ({percentage:.1f}% of code)'
+                        ))
+                    
+                    print('DEBUG: JSCPD severity summary: ' + str(severity_summary))
+            except Exception as e:
+                print('Error processing jscpd.json: ' + str(e))
+        else:
+            print('DEBUG: jscpd.json file not found')
+        
+        # Process JSDoc results
+        if (report_dir / 'jsdoc.json').exists():
+            try:
+                with open(report_dir / 'jsdoc.json') as f:
+                    jsdoc_data = json.load(f)
+                    print('DEBUG: JSDoc data loaded')
+                    print('DEBUG: JSDoc raw data structure: ' + str(list(jsdoc_data.keys()) if isinstance(jsdoc_data, dict) else type(jsdoc_data)))
+                    
+                    # Check if documentation was generated successfully
+                    if isinstance(jsdoc_data, dict) and jsdoc_data:
+                        severity_summary['info'].append(dict(
+                            tool='jsdoc',
+                            file='./',
+                            line=1,
+                            issue='documentation_generated',
+                            message='JSDoc documentation generated successfully'
+                        ))
+                    
+                    print('DEBUG: JSDoc severity summary: ' + str(severity_summary))
+            except Exception as e:
+                print('Error processing jsdoc.json: ' + str(e))
+        else:
+            print('DEBUG: jsdoc.json file not found')
         
         # Save severity summary
         output_file = report_dir / 'severity_summary.json'
