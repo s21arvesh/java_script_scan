@@ -93,11 +93,8 @@ jobs:
         # ESLint
         eslint . -f json -o $REPORT_DIR/eslint.json || true
 
-        # JSCPD (FIX OUTPUT PATH)
-        mkdir -p $REPORT_DIR/jscpd
-        jscpd . --reporters json --output $REPORT_DIR/jscpd || true
-        mv $REPORT_DIR/jscpd/jscpd-report.json $REPORT_DIR/jscpd.json || true
-        rm -rf $REPORT_DIR/jscpd
+        # JSCPD
+        jscpd . --reporters json --output $REPORT_DIR || true
 
         # Retire.js (FORCE JS scan)
         retire --js --outputformat json --outputpath $REPORT_DIR/retire.json . || true
@@ -266,7 +263,7 @@ jobs:
                 print('Error processing plato report: ' + str(e))
         
         # Process JSCPD results
-        jscpd_file = report_dir / 'jscpd.json'
+        jscpd_file = report_dir / 'jscpd-report.json'
         if jscpd_file.exists() and jscpd_file.stat().st_size > 0:
             try:
                 with open(jscpd_file) as f:
@@ -286,7 +283,7 @@ jobs:
                             message=f'Found {total_duplicates} duplicates ({percentage:.1f}% of code)'
                         ))
             except Exception as e:
-                print('Error processing jscpd.json: ' + str(e))
+                print('Error processing jscpd-report.json: ' + str(e))
         
         # Process JSDoc results
         jsdoc_file = report_dir / 'jsdoc.json'
@@ -323,7 +320,7 @@ jobs:
         test -f $REPORT_DIR/eslint.json || echo "❌ eslint missing"
         test -f $REPORT_DIR/npm_audit.json || echo "❌ npm audit missing"
         test -f $REPORT_DIR/retire.json || echo "❌ retire missing"
-        test -f $REPORT_DIR/jscpd.json || echo "❌ jscpd missing"
+        test -f $REPORT_DIR/jscpd-report.json || echo "❌ jscpd missing"
         test -f $REPORT_DIR/jsdoc.json || echo "❌ jsdoc missing"
         test -f $REPORT_DIR/plato-report/report.json || echo "❌ plato missing"
         
