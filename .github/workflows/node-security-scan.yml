@@ -1,0 +1,95 @@
+name: "Node.js Security Scan - Dynamic"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  node-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "18"
+        
+    - name: Install dependencies
+      run: |
+        set +e  # Don't exit on error
+        if [ -f "package.json" ]; then
+          if [ -f "package-lock.json" ]; then
+            echo "Installing from lock file..."
+            npm ci --no-audit --no-fund || echo "npm ci failed, trying npm install..."
+            npm install --no-audit --no-fund || echo "npm install also failed"
+          else
+            echo "No lock file found, running npm install..."
+            npm install --no-audit --no-fund || echo "npm install failed"
+          fi
+        else
+          echo "No package.json found, creating dummy package.json"
+          echo '{"name": "test-project", "version": "1.0.0", "scripts": {}}' > package.json
+        fi
+        set -e  # Exit on error for subsequent steps
+        
+    - name: Create report directory
+      run: |
+        mkdir -p $REPORT_DIR
+        
+    - name: Run npm audit
+      run: |
+        set +e  # Don't exit on error
+        echo "Running npm audit..."
+        echo "Current directory: $(pwd)"
+        echo "Files in directory:"
+        ls -la
+        echo "=== NPM AUDIT START ==="
+        npm audit --json > $REPORT_DIR/npm_audit.json 2>&1 || echo "npm audit completed with issues"
+        echo "=== NPM AUDIT END ==="
+        echo "npm audit output:"
+        cat $REPORT_DIR/npm_audit.json || echo "No npm audit output found"
+        set -e  # Exit on error for subsequent steps
+        
+    - name: Run ESLint
+      run: |
+        set +e  # Don't exit on error
+        echo "Running ESLint..."
+        echo "Installing ESLint globally..."
+        npm install -g eslint || echo "ESLint install failed, continuing..."
+        echo "Creating ESLint config..."
+        echo 'module.exports = [];' > eslint.config.js
+        echo "=== ESLINT START ==="
+        eslint . -f json -o $REPORT_DIR/eslint.json 2>&1 || echo "ESLint completed with issues"
+        echo "=== ESLINT END ==="
+        echo "ESLint output:"
+        cat $REPORT_DIR/eslint.json || echo "No ESLint output found"
+        set -e  # Exit on error for subsequent steps
+        
+    - name: Generate simple report
+      run: |
+        set +e  # Don't exit on error
+        echo "## Node.js Security Scan Results" > $GITHUB_STEP_SUMMARY
+        echo "### Scan Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- npm audit: \`$REPORT_DIR/npm_audit.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- ESLint: \`$REPORT_DIR/eslint.json\`" >> $GITHUB_STEP_SUMMARY
+        echo "- Repository: ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Branch: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Completed: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Report Directory Contents" >> $GITHUB_STEP_SUMMARY
+        ls -la $REPORT_DIR/ >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "No reports directory found" >> $GITHUB_STEP_SUMMARY
+        set -e  # Exit on error for subsequent steps
+
+    - name: Upload scan reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      continue-on-error: true
+      with:
+        name: node-scan-reports
+        path: ${{ env.REPORT_DIR }}/
+        retention-days: 7
+
+env:
+  REPORT_DIR: scan-reports
