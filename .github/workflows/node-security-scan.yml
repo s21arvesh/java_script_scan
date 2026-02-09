@@ -1,0 +1,213 @@
+name: "Node.js Security Scan - Dynamic"
+
+on:
+  workflow_dispatch:
+
+env:
+  REPORT_DIR: scan-reports
+
+jobs:
+  node-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "18"
+        
+    - name: Install dependencies
+      run: |
+        set +e
+        if [ -f "package.json" ]; then
+          if [ -f "package-lock.json" ]; then
+            npm ci --no-audit --no-fund || npm install --no-audit --no-fund || true
+          else
+            npm install --no-audit --no-fund || true
+          fi
+        else
+          echo '{"name": "test-project", "version": "1.0.0"}' > package.json
+        fi
+        set -e
+        
+    - name: Create report directory
+      run: mkdir -p $REPORT_DIR
+
+    - name: Install scan tools
+      run: |
+        npm install -g npm eslint jscpd retire plato jsdoc
+
+    - name: Create ESLint config
+      run: |
+        printf '{"env":{"node":true,"es2021":true,"commonjs":true},"extends":["eslint:recommended"],"parserOptions":{"ecmaVersion":12,"sourceType":"script"},"rules":{"no-eval":"error","no-unused-vars":"error","no-console":"warn","no-undef":"error"}}' > .eslintrc.json
+        cat .eslintrc.json
+
+    - name: Run Node.js code scans
+      run: |
+        echo "Starting Node.js code scans..."
+        echo "JavaScript files found:"
+        find . -name '*.js' -not -path './node_modules/*' -type f | head -20 || echo "No JS files found"
+        echo "=== Running Scan Commands ==="
+                # NPM Audit
+        npm install --package-lock-only || true
+        npm audit --json > $REPORT_DIR/npm_audit.json || true
+
+        # ESLint
+        eslint . --no-eslintrc -c .eslintrc.json -f json -o $REPORT_DIR/eslint.json --ignore-pattern node_modules/ || true
+
+        # JSCPD
+        jscpd . --reporters json --output $REPORT_DIR --min-lines 3 --min-tokens 25 --ignore "node_modules" || true
+
+        # Retire.js
+        retire --js --nodepath node_modules --outputformat json --outputpath $REPORT_DIR/retire.json . || true
+
+        # Plato
+        plato -r -x 'node_modules' -d $REPORT_DIR/plato-report . || true
+
+        # JSDoc
+        find . -maxdepth 2 -name '*.js' -not -path './node_modules/*' | head -50 | xargs jsdoc -X > $REPORT_DIR/jsdoc.json 2>/dev/null || true
+        echo "=== Scan Commands Completed ==="
+        echo "Report directory contents:"
+        ls -la $REPORT_DIR/ || echo "Report directory not accessible"
+
+    - name: Generate severity summary
+      run: |
+        python3 << 'PYEOF'
+        import json, os
+        from pathlib import Path
+        
+        report_dir = Path(os.environ.get('REPORT_DIR', 'scan-reports'))
+        
+        severity_summary = {'critical': [], 'high': [], 'medium': [], 'low': [], 'info': []}
+
+        # Process ESLint results
+        eslint_file = report_dir / 'eslint.json'
+        if eslint_file.exists() and eslint_file.stat().st_size > 0:
+            try:
+                with open(eslint_file) as f:
+                    for result in json.load(f):
+                        for msg in result.get('messages', []):
+                            sev = 'high' if msg.get('severity') == 2 else 'medium'
+                            severity_summary[sev].append(dict(
+                                tool='eslint',
+                                file=result.get('filePath', 'unknown'),
+                                line=msg.get('line'), column=msg.get('column'),
+                                issue=msg.get('ruleId'), message=msg.get('message')))
+            except Exception as e:
+                print('Error processing eslint.json: ' + str(e))
+
+        # Process NPM Audit results
+        npm_file = report_dir / 'npm_audit.json'
+        if npm_file.exists() and npm_file.stat().st_size > 0:
+            try:
+                with open(npm_file) as f:
+                    npm_data = json.load(f)
+                    for pkg, vuln in npm_data.get('vulnerabilities', {}).items():
+                        sev_map = {'critical':'critical','high':'high','moderate':'medium','low':'low','info':'info'}
+                        sev = sev_map.get(vuln.get('severity','low'), 'low')
+                        severity_summary[sev].append(dict(
+                            tool='npm_audit', file='./package.json',
+                            issue=pkg, message=vuln.get('title','Security vulnerability'),
+                            severity=vuln.get('severity','low')))
+            except Exception as e:
+                print('Error processing npm_audit.json: ' + str(e))
+
+        # Process Retire.js results
+        retire_file = report_dir / 'retire.json'
+        if retire_file.exists() and retire_file.stat().st_size > 0:
+            try:
+                with open(retire_file) as f:
+                    retire_data = json.load(f)
+                    for file_entry in retire_data.get('data', []):
+                        for component in file_entry.get('results', []):
+                            for vuln in component.get('vulnerabilities', []):
+                                sev_map = {'critical':'critical','high':'high','medium':'medium','moderate':'medium','low':'low'}
+                                sev = sev_map.get(vuln.get('severity','low'), 'low')
+                                severity_summary[sev].append(dict(
+                                    tool='retire',
+                                    file=file_entry.get('file','unknown'),
+                                    issue=component.get('component','unknown'),
+                                    message=vuln.get('identifiers',{}).get('summary','vulnerability'),
+                                    severity=vuln.get('severity','medium')))
+            except Exception as e:
+                print('Error processing retire.json: ' + str(e))
+
+        # Process Plato results
+        plato_file = report_dir / 'plato-report' / 'report.json'
+        if plato_file.exists() and plato_file.stat().st_size > 0:
+            try:
+                with open(plato_file) as f:
+                    plato_data = json.load(f)
+                    for file_path, report_item in plato_data.get('reports', {}).items():
+                        if isinstance(report_item, dict):
+                            complexity = report_item.get('complexity',{}).get('aggregate',{}).get('cyclomatic',0)
+                            if complexity > 15:
+                                severity_summary['high'].append(dict(tool='plato', file=file_path, line=1, issue='high_complexity', message='Cyclomatic complexity: '+str(complexity)))
+                            elif complexity > 10:
+                                severity_summary['medium'].append(dict(tool='plato', file=file_path, line=1, issue='medium_complexity', message='Cyclomatic complexity: '+str(complexity)))
+            except Exception as e:
+                print('Error processing plato report: ' + str(e))
+
+        # Process JSCPD results
+        jscpd_file = report_dir / 'jscpd-report.json'
+        if jscpd_file.exists() and jscpd_file.stat().st_size > 0:
+            try:
+                with open(jscpd_file) as f:
+                    jscpd_data = json.load(f)
+                    dupes = jscpd_data.get('duplicates', [])
+                    if isinstance(dupes, list):
+                        for dup in dupes:
+                            severity_summary['medium'].append(dict(
+                                tool='jscpd', file=dup.get('firstFile',{}).get('name','unknown'),
+                                line=1, issue='code_duplication',
+                                message='Duplicate: '+str(dup.get('lines',0))+' lines'))
+                    total = jscpd_data.get('statistics',{}).get('total',{})
+                    pct = total.get('percentage', 0)
+                    if pct > 0:
+                        severity_summary['info'].append(dict(tool='jscpd', file='./', line=1, issue='duplication_summary', message='Duplication: '+str(round(pct,1))+'%'))
+            except Exception as e:
+                print('Error processing jscpd-report.json: ' + str(e))
+
+        # Process JSDoc results
+        jsdoc_file = report_dir / 'jsdoc.json'
+        if jsdoc_file.exists() and jsdoc_file.stat().st_size > 0:
+            try:
+                with open(jsdoc_file) as f:
+                    jsdoc_data = json.load(f)
+                    if isinstance(jsdoc_data, list):
+                        for entry in jsdoc_data:
+                            if isinstance(entry, dict) and entry.get('undocumented', False):
+                                severity_summary['info'].append(dict(
+                                    tool='jsdoc',
+                                    file=entry.get('meta',{}).get('filename','unknown'),
+                                    line=entry.get('meta',{}).get('lineno',1),
+                                    issue='missing_jsdoc', message='Missing JSDoc for: '+entry.get('name','unknown')))
+                        severity_summary['info'].append(dict(tool='jsdoc', file='./', line=1, issue='doc_scan', message='JSDoc scanned '+str(len(jsdoc_data))+' symbols'))
+            except Exception as e:
+                print('Error processing jsdoc.json: ' + str(e))
+
+        output_file = report_dir / 'severity_summary.json'
+        with open(output_file, 'w') as f:
+            json.dump(severity_summary, f, indent=2)
+        print('=== FINAL SEVERITY SUMMARY ===')
+        for sev, issues in severity_summary.items():
+            print(sev + ': ' + str(len(issues)) + ' issues')
+        PYEOF
+
+    - name: Verify scan outputs
+      run: |
+        echo "=== Report directory ==="
+        ls -laR $REPORT_DIR
+        echo "=== severity_summary.json ==="
+        cat $REPORT_DIR/severity_summary.json || echo "severity_summary.json MISSING"
+
+    - name: Upload scan reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: node-scan-reports
+        path: ${{ env.REPORT_DIR }}/
+        retention-days: 30
