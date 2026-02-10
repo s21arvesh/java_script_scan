@@ -469,8 +469,11 @@ jobs:
                 with open(trufflehog_file) as f:
                     content = f.read().strip()
                     if content:
-                        trufflehog_data = json.loads('[' + content.replace('}
-{', '},{') + ']') if not content.startswith('[') else json.loads(content)
+                        if content.startswith('['):
+                            trufflehog_data = json.loads(content)
+                        else:
+                            lines = [l.strip() for l in content.splitlines() if l.strip()]
+                            trufflehog_data = [json.loads(l) for l in lines]
                         for finding in trufflehog_data:
                             severity_summary['critical'].append(dict(
                                 tool='trufflehog',
