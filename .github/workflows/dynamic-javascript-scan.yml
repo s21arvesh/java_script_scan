@@ -124,7 +124,7 @@ jobs:
         scancode . --json $REPORT_DIR/scancode.json --copyright --license --package --info 2>/dev/null || echo '{"files": []}' > $REPORT_DIR/scancode.json
 
         # TruffleHog
-        trufflehog filesystem --directory . --json > $REPORT_DIR/trufflehog.json 2>/dev/null || echo '[]' > $REPORT_DIR/trufflehog.json
+        trufflehog filesystem --directory . --json --output $REPORT_DIR/trufflehog.json 2>/dev/null || echo '{"FoundIssues": []}' > $REPORT_DIR/trufflehog.json
 
         # Gitleaks
         gitleaks detect --source . --report-format json --report-path $REPORT_DIR/gitleaks.json --no-git 2>/dev/null || echo '[]' > $REPORT_DIR/gitleaks.json
@@ -449,13 +449,20 @@ jobs:
         if trufflehog_file.exists() and trufflehog_file.stat().st_size > 0:
             try:
                 with open(trufflehog_file) as f:
-                    content = f.read().strip()
-                    if content:
-                        if content.startswith('['):
-                            trufflehog_data = json.loads(content)
-                        else:
-                            lines = [l.strip() for l in content.splitlines() if l.strip()]
-                            trufflehog_data = [json.loads(l) for l in lines]
+                    trufflehog_data = json.load(f)
+                    
+                    # Handle TruffleHog v3 format: {"FoundIssues": [...]}
+                    if isinstance(trufflehog_data, dict) and 'FoundIssues' in trufflehog_data:
+                        for finding in trufflehog_data.get('FoundIssues', []):
+                            severity_summary['critical'].append(dict(
+                                tool='trufflehog',
+                                file=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('file', 'unknown'),
+                                line=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('line', 1),
+                                issue=finding.get('DetectorName', 'secret_detected'),
+                                message='Secret detected: ' + finding.get('DetectorName', 'unknown type')
+                            ))
+                    # Handle array format (fallback)
+                    elif isinstance(trufflehog_data, list):
                         for finding in trufflehog_data:
                             severity_summary['critical'].append(dict(
                                 tool='trufflehog',
