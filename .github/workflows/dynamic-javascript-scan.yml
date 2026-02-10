@@ -124,7 +124,12 @@ jobs:
         scancode . --json $REPORT_DIR/scancode.json --copyright --license --package --info 2>/dev/null || echo '{"files": []}' > $REPORT_DIR/scancode.json
 
         # TruffleHog
-        trufflehog filesystem --directory . --json --output $REPORT_DIR/trufflehog.json 2>/dev/null || echo '{"FoundIssues": []}' > $REPORT_DIR/trufflehog.json
+        echo "Running TruffleHog..."
+        echo "Scanning filesystem..."
+        trufflehog filesystem --directory . --json --output $REPORT_DIR/trufflehog.json --verbose --debug --rules /dev/null || echo '{"FoundIssues": []}' > $REPORT_DIR/trufflehog.json
+        echo "Scanning git history..."
+        trufflehog git . --json --output $REPORT_DIR/trufflehog_git.json --verbose --debug --rules /dev/null || echo '{"FoundIssues": []}' > $REPORT_DIR/trufflehog_git.json
+        echo "TruffleHog completed. File sizes: filesystem $(wc -c < $REPORT_DIR/trufflehog.json) bytes, git $(wc -c < $REPORT_DIR/trufflehog_git.json) bytes"
 
         # Gitleaks
         gitleaks detect --source . --report-format json --report-path $REPORT_DIR/gitleaks.json --no-git 2>/dev/null || echo '[]' > $REPORT_DIR/gitleaks.json
@@ -444,35 +449,39 @@ jobs:
             except Exception as e:
                 print('Error processing scancode.json: ' + str(e))
 
-        # Process TruffleHog results
-        trufflehog_file = report_dir / 'trufflehog.json'
-        if trufflehog_file.exists() and trufflehog_file.stat().st_size > 0:
-            try:
-                with open(trufflehog_file) as f:
-                    trufflehog_data = json.load(f)
-                    
-                    # Handle TruffleHog v3 format: {"FoundIssues": [...]}
-                    if isinstance(trufflehog_data, dict) and 'FoundIssues' in trufflehog_data:
-                        for finding in trufflehog_data.get('FoundIssues', []):
-                            severity_summary['critical'].append(dict(
-                                tool='trufflehog',
-                                file=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('file', 'unknown'),
-                                line=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('line', 1),
-                                issue=finding.get('DetectorName', 'secret_detected'),
-                                message='Secret detected: ' + finding.get('DetectorName', 'unknown type')
-                            ))
-                    # Handle array format (fallback)
-                    elif isinstance(trufflehog_data, list):
-                        for finding in trufflehog_data:
-                            severity_summary['critical'].append(dict(
-                                tool='trufflehog',
-                                file=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('file', 'unknown'),
-                                line=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('line', 1),
-                                issue=finding.get('DetectorName', 'secret_detected'),
-                                message='Secret detected: ' + finding.get('DetectorName', 'unknown type')
-                            ))
-            except Exception as e:
-                print('Error processing trufflehog.json: ' + str(e))
+        # Process TruffleHog results (both filesystem and git scans)
+        trufflehog_files = ['trufflehog.json', 'trufflehog_git.json']
+        for trufflehog_filename in trufflehog_files:
+            trufflehog_file = report_dir / trufflehog_filename
+            if trufflehog_file.exists() and trufflehog_file.stat().st_size > 0:
+                try:
+                    with open(trufflehog_file) as f:
+                        trufflehog_data = json.load(f)
+                        
+                        # Handle TruffleHog v3 format: {"FoundIssues": [...]}
+                        if isinstance(trufflehog_data, dict) and 'FoundIssues' in trufflehog_data:
+                            for finding in trufflehog_data.get('FoundIssues', []):
+                                source_type = 'git' if 'git' in trufflehog_filename else 'filesystem'
+                                severity_summary['critical'].append(dict(
+                                    tool='trufflehog',
+                                    file=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('file', 'unknown'),
+                                    line=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('line', 1),
+                                    issue=finding.get('DetectorName', 'secret_detected'),
+                                    message=f'Secret detected ({source_type}): ' + finding.get('DetectorName', 'unknown type')
+                                ))
+                        # Handle array format (fallback)
+                        elif isinstance(trufflehog_data, list):
+                            source_type = 'git' if 'git' in trufflehog_filename else 'filesystem'
+                            for finding in trufflehog_data:
+                                severity_summary['critical'].append(dict(
+                                    tool='trufflehog',
+                                    file=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('file', 'unknown'),
+                                    line=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('line', 1),
+                                    issue=finding.get('DetectorName', 'secret_detected'),
+                                    message=f'Secret detected ({source_type}): ' + finding.get('DetectorName', 'unknown type')
+                                ))
+                except Exception as e:
+                    print(f'Error processing {trufflehog_filename}: ' + str(e))
 
         # Process Gitleaks results
         gitleaks_file = report_dir / 'gitleaks.json'
@@ -534,7 +543,8 @@ jobs:
         test -f $REPORT_DIR/trivy.json || echo "❌ trivy missing"
         test -f $REPORT_DIR/grype.json || echo "❌ grype missing"
         test -f $REPORT_DIR/scancode.json || echo "❌ scancode missing"
-        test -f $REPORT_DIR/trufflehog.json || echo "❌ trufflehog missing"
+        test -f $REPORT_DIR/trufflehog.json || echo "❌ trufflehog filesystem missing"
+        test -f $REPORT_DIR/trufflehog_git.json || echo "❌ trufflehog git missing"
         test -f $REPORT_DIR/gitleaks.json || echo "❌ gitleaks missing"
 
     - name: Upload scan reports
