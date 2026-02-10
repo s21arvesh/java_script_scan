@@ -38,7 +38,7 @@ jobs:
 
     - name: Install scan tools
       run: |
-        npm install -g npm eslint@8 jscpd retire plato jsdoc pip install osv-scanner || go install github.com/google/osv-scanner/cmd/osv-scanner@latest curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin pip install scancode-toolkit pip install trufflehog3 curl -sL https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep browser_download_url | grep linux_x64 | cut -d '"' -f 4 | xargs -I {} wget -q {} -O /tmp/gitleaks.tar.gz && sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+        npm install -g npm eslint jscpd retire plato jsdoc
         echo "Installing dependency scanning tools..."
         # Install Go for some tools
         if command -v go >/dev/null 2>&1; then
