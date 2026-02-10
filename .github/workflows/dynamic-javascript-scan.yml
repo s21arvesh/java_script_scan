@@ -31,7 +31,7 @@ jobs:
         
     - name: Install dependencies
       run: |
-        npm install -g eslint npm retire plato jsdoc jscpd
+        npm install -g eslint npm retire plato jsdoc jscpd go install github.com/google/osv-scanner/cmd/osv-scanner@latest || pip install osv-scanner curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin pip install scancode-toolkit pip install trufflehog3 curl -sL https://github.com/zricethezav/gitleaks/releases/latest/download/gitleaks-linux-amd64 -O /usr/local/bin/gitleaks && chmod +x /usr/local/bin/gitleaks
         echo "Installing dependency scanning tools..."
         # Install Go for some tools
         if command -v go >/dev/null 2>&1; then
@@ -125,6 +125,27 @@ jobs:
         # JSCPD
         jscpd . --reporters json --output $REPORT_DIR --min-lines 3 --min-tokens 25 --ignore "node_modules" || true
         test -f $REPORT_DIR/jscpd-report.json || echo '{"duplicates":[],"statistics":{"total":{"percentage":0}}}' > $REPORT_DIR/jscpd-report.json
+
+        # OSV Scanner
+        osv-scanner scan . --format json --output $REPORT_DIR/osv_scanner.json 2>/dev/null || echo '{"results": []}' > $REPORT_DIR/osv_scanner.json
+
+        # Syft SBOM
+        syft . -o json=$REPORT_DIR/syft.json 2>/dev/null || echo '{"artifacts": []}' > $REPORT_DIR/syft.json
+
+        # Trivy
+        trivy fs --format json --output $REPORT_DIR/trivy.json . 2>/dev/null || echo '{"Results": []}' > $REPORT_DIR/trivy.json
+
+        # Grype
+        grype dir:. -o json > $REPORT_DIR/grype.json 2>/dev/null || echo '{"matches": []}' > $REPORT_DIR/grype.json
+
+        # ScanCode
+        scancode . --json $REPORT_DIR/scancode.json --copyright --license --package --info 2>/dev/null || echo '{"files": []}' > $REPORT_DIR/scancode.json
+
+        # TruffleHog
+        trufflehog filesystem --directory . --json > $REPORT_DIR/trufflehog.json 2>/dev/null || echo '[]' > $REPORT_DIR/trufflehog.json
+
+        # Gitleaks
+        gitleaks detect --source . --report-format json --report-path $REPORT_DIR/gitleaks.json --no-git 2>/dev/null || echo '[]' > $REPORT_DIR/gitleaks.json
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents after scans:"
         ls -la $REPORT_DIR/ || echo "Report directory not accessible"
@@ -292,7 +313,7 @@ jobs:
                 print('Error processing plato report: ' + str(e))
 
         # Debug: Check file existence
-        for f in ['npm_audit.json', 'retire.json', 'jscpd-report.json', 'jsdoc.json']:
+        for f in ['npm_audit.json', 'retire.json', 'jscpd-report.json', 'jsdoc.json', 'osv_scanner.json', 'syft.json', 'trivy.json', 'grype.json', 'scancode.json', 'trufflehog.json', 'gitleaks.json']:
             p = report_dir / f
             print(f, 'exists:', p.exists(), 'size:', p.stat().st_size if p.exists() else 0)
 
@@ -351,7 +372,151 @@ jobs:
                         ))
             except Exception as e:
                 print('Error processing jsdoc.json: ' + str(e))
-        
+
+        # Process OSV Scanner results
+        osv_file = report_dir / 'osv_scanner.json'
+        if osv_file.exists() and osv_file.stat().st_size > 0:
+            try:
+                with open(osv_file) as f:
+                    osv_data = json.load(f)
+                    for result in osv_data.get('results', []):
+                        for pkg in result.get('packages', []):
+                            for vuln in pkg.get('vulnerabilities', []):
+                                sev = vuln.get('database_specific', {}).get('severity', 'MODERATE').upper()
+                                mapped = 'critical' if sev == 'CRITICAL' else 'high' if sev == 'HIGH' else 'medium' if sev in ('MODERATE', 'MEDIUM') else 'low'
+                                severity_summary[mapped].append(dict(
+                                    tool='osv_scanner',
+                                    file=pkg.get('package', {}).get('name', 'unknown'),
+                                    line=1,
+                                    issue=vuln.get('id', 'unknown'),
+                                    message=vuln.get('summary', 'Vulnerability detected')
+                                ))
+            except Exception as e:
+                print('Error processing osv_scanner.json: ' + str(e))
+
+        # Process Trivy results
+        trivy_file = report_dir / 'trivy.json'
+        if trivy_file.exists() and trivy_file.stat().st_size > 0:
+            try:
+                with open(trivy_file) as f:
+                    trivy_data = json.load(f)
+                    for result in trivy_data.get('Results', []):
+                        for vuln in result.get('Vulnerabilities', []):
+                            sev = vuln.get('Severity', 'MEDIUM').upper()
+                            mapped = 'critical' if sev == 'CRITICAL' else 'high' if sev == 'HIGH' else 'medium' if sev == 'MEDIUM' else 'low'
+                            severity_summary[mapped].append(dict(
+                                tool='trivy',
+                                file=result.get('Target', 'unknown'),
+                                line=1,
+                                issue=vuln.get('VulnerabilityID', 'unknown'),
+                                message=vuln.get('Title', vuln.get('Description', 'Vulnerability detected'))
+                            ))
+            except Exception as e:
+                print('Error processing trivy.json: ' + str(e))
+
+        # Process Grype results
+        grype_file = report_dir / 'grype.json'
+        if grype_file.exists() and grype_file.stat().st_size > 0:
+            try:
+                with open(grype_file) as f:
+                    grype_data = json.load(f)
+                    for match in grype_data.get('matches', []):
+                        vuln = match.get('vulnerability', {})
+                        sev = vuln.get('severity', 'Medium').upper()
+                        mapped = 'critical' if sev == 'CRITICAL' else 'high' if sev == 'HIGH' else 'medium' if sev == 'MEDIUM' else 'low'
+                        artifact = match.get('artifact', {})
+                        severity_summary[mapped].append(dict(
+                            tool='grype',
+                            file=artifact.get('name', 'unknown'),
+                            line=1,
+                            issue=vuln.get('id', 'unknown'),
+                            message=vuln.get('description', 'Vulnerability detected'),
+                            version=artifact.get('version', 'unknown')
+                        ))
+            except Exception as e:
+                print('Error processing grype.json: ' + str(e))
+
+        # Process ScanCode results
+        scancode_file = report_dir / 'scancode.json'
+        if scancode_file.exists() and scancode_file.stat().st_size > 0:
+            try:
+                with open(scancode_file) as f:
+                    scancode_data = json.load(f)
+                    for file_entry in scancode_data.get('files', []):
+                        for license_det in file_entry.get('license_detections', []):
+                            severity_summary['info'].append(dict(
+                                tool='scancode',
+                                file='./' + file_entry.get('path', 'unknown').lstrip('./'),
+                                line=1,
+                                issue='license_detection',
+                                message='License: ' + license_det.get('license_expression', 'unknown')
+                            ))
+                        for copyright_det in file_entry.get('copyrights', []):
+                            severity_summary['info'].append(dict(
+                                tool='scancode',
+                                file='./' + file_entry.get('path', 'unknown').lstrip('./'),
+                                line=1,
+                                issue='copyright_detection',
+                                message='Copyright: ' + copyright_det.get('copyright', 'unknown')
+                            ))
+            except Exception as e:
+                print('Error processing scancode.json: ' + str(e))
+
+        # Process TruffleHog results
+        trufflehog_file = report_dir / 'trufflehog.json'
+        if trufflehog_file.exists() and trufflehog_file.stat().st_size > 0:
+            try:
+                with open(trufflehog_file) as f:
+                    content = f.read().strip()
+                    if content:
+                        trufflehog_data = json.loads('[' + content.replace('}
+{', '},{') + ']') if not content.startswith('[') else json.loads(content)
+                        for finding in trufflehog_data:
+                            severity_summary['critical'].append(dict(
+                                tool='trufflehog',
+                                file=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('file', 'unknown'),
+                                line=finding.get('SourceMetadata', {}).get('Data', {}).get('Filesystem', {}).get('line', 1),
+                                issue=finding.get('DetectorName', 'secret_detected'),
+                                message='Secret detected: ' + finding.get('DetectorName', 'unknown type')
+                            ))
+            except Exception as e:
+                print('Error processing trufflehog.json: ' + str(e))
+
+        # Process Gitleaks results
+        gitleaks_file = report_dir / 'gitleaks.json'
+        if gitleaks_file.exists() and gitleaks_file.stat().st_size > 0:
+            try:
+                with open(gitleaks_file) as f:
+                    gitleaks_data = json.load(f)
+                    if isinstance(gitleaks_data, list):
+                        for finding in gitleaks_data:
+                            severity_summary['critical'].append(dict(
+                                tool='gitleaks',
+                                file='./' + finding.get('File', 'unknown').lstrip('./'),
+                                line=finding.get('StartLine', 1),
+                                issue=finding.get('RuleID', 'secret_detected'),
+                                message='Secret detected: ' + finding.get('Description', 'unknown type')
+                            ))
+            except Exception as e:
+                print('Error processing gitleaks.json: ' + str(e))
+
+        # Process Syft results
+        syft_file = report_dir / 'syft.json'
+        if syft_file.exists() and syft_file.stat().st_size > 0:
+            try:
+                with open(syft_file) as f:
+                    syft_data = json.load(f)
+                    artifacts = syft_data.get('artifacts', [])
+                    severity_summary['info'].append(dict(
+                        tool='syft',
+                        file='./',
+                        line=1,
+                        issue='sbom_generated',
+                        message='SBOM generated with ' + str(len(artifacts)) + ' artifacts/packages detected'
+                    ))
+            except Exception as e:
+                print('Error processing syft.json: ' + str(e))
+
         # Save severity summary
         output_file = report_dir / 'severity_summary.json'
         with open(output_file, 'w') as f:
@@ -372,6 +537,13 @@ jobs:
         test -f $REPORT_DIR/jscpd-report.json || echo "❌ jscpd missing"
         test -f $REPORT_DIR/jsdoc.json || echo "❌ jsdoc missing"
         test -f $REPORT_DIR/plato-report/report.json || echo "❌ plato missing"
+        test -f $REPORT_DIR/osv_scanner.json || echo "❌ osv_scanner missing"
+        test -f $REPORT_DIR/syft.json || echo "❌ syft missing"
+        test -f $REPORT_DIR/trivy.json || echo "❌ trivy missing"
+        test -f $REPORT_DIR/grype.json || echo "❌ grype missing"
+        test -f $REPORT_DIR/scancode.json || echo "❌ scancode missing"
+        test -f $REPORT_DIR/trufflehog.json || echo "❌ trufflehog missing"
+        test -f $REPORT_DIR/gitleaks.json || echo "❌ gitleaks missing"
 
     - name: Upload scan reports
       uses: actions/upload-artifact@v4
