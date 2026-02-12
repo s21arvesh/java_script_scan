@@ -31,7 +31,7 @@ jobs:
         
     - name: Install dependencies
       run: |
-        npm install -g npm jsdoc retire jscpd eslint plato
+        npm install -g npm retire plato jscpd jsdoc eslint
         
     - name: Install additional scan tools
       run: |
@@ -121,37 +121,37 @@ jobs:
         echo "Node modules exists:"
         test -d node_modules && echo "✅ node_modules found" || echo "❌ node_modules not found"
         echo "=== Running Scan Commands ==="
-                # NPM Audit
+                # Syft SBOM
+        syft . -o json=$REPORT_DIR/syft.json 2>/dev/null || echo '{"artifacts": []}' > $REPORT_DIR/syft.json
+
+        # Trivy
+        trivy fs --format json --output $REPORT_DIR/trivy.json . 2>/dev/null || echo '{"Results": []}' > $REPORT_DIR/trivy.json
+
+        # NPM Audit
         npm install --package-lock-only || true
         npm audit --json > $REPORT_DIR/npm_audit.json || true
 
-        # JSDoc
-        find . -maxdepth 2 -name '*.js' -not -path './node_modules/*' | head -50 | xargs jsdoc -X > $REPORT_DIR/jsdoc.json 2>/dev/null || true
-
         # Retire.js
         retire --js --nodepath node_modules --outputformat json --outputpath $REPORT_DIR/retire.json . || true
+
+        # Plato
+        plato -r -x 'node_modules' -d $REPORT_DIR/plato-report . || true
 
         # JSCPD
         jscpd . --reporters json --output $REPORT_DIR --min-lines 3 --min-tokens 25 --ignore "node_modules" || true
         test -f $REPORT_DIR/jscpd-report.json || echo '{"duplicates":[],"statistics":{"total":{"percentage":0}}}' > $REPORT_DIR/jscpd-report.json
 
-        # Trivy
-        trivy fs --format json --output $REPORT_DIR/trivy.json . 2>/dev/null || echo '{"Results": []}' > $REPORT_DIR/trivy.json
+        # Grype
+        grype dir:. -o json > $REPORT_DIR/grype.json 2>/dev/null || echo '{"matches": []}' > $REPORT_DIR/grype.json
 
-        # OSV Scanner
-        osv-scanner scan . --format json --output $REPORT_DIR/osv_scanner.json 2>/dev/null || echo '{"results": []}' > $REPORT_DIR/osv_scanner.json
-
-        # Syft SBOM
-        syft . -o json=$REPORT_DIR/syft.json 2>/dev/null || echo '{"artifacts": []}' > $REPORT_DIR/syft.json
+        # JSDoc
+        find . -maxdepth 2 -name '*.js' -not -path './node_modules/*' | head -50 | xargs jsdoc -X > $REPORT_DIR/jsdoc.json 2>/dev/null || true
 
         # ESLint
         eslint . -f json -o $REPORT_DIR/eslint.json || true
 
-        # Grype
-        grype dir:. -o json > $REPORT_DIR/grype.json 2>/dev/null || echo '{"matches": []}' > $REPORT_DIR/grype.json
-
-        # Plato
-        plato -r -x 'node_modules' -d $REPORT_DIR/plato-report . || true
+        # OSV Scanner
+        osv-scanner scan . --format json --output $REPORT_DIR/osv_scanner.json 2>/dev/null || echo '{"results": []}' > $REPORT_DIR/osv_scanner.json
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents after scans:"
         ls -la $REPORT_DIR/ || echo "Report directory not accessible"
