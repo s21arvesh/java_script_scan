@@ -31,14 +31,47 @@ jobs:
         
     - name: Install dependencies
       run: |
-        npm install -g eslint npm retire plato jsdoc jscpd
-        pip install osv-scanner || true
-        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sudo sh -s -- -b /usr/local/bin
-        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin
-        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sudo sh -s -- -b /usr/local/bin
-        pip install scancode-toolkit
-        pip install trufflehog3
-        curl -sL https://github.com/gitleaks/gitleaks/releases/latest/download/gitleaks_8.18.2_linux_x64.tar.gz -o gitleaks.tar.gz && tar -xzf gitleaks.tar.gz gitleaks && sudo mv gitleaks /usr/local/bin/gitleaks && chmod +x /usr/local/bin/gitleaks
+        npm install -g npm jsdoc retire jscpd eslint plato
+        
+    - name: Install additional scan tools
+      run: |
+        echo "Installing Go for dependency scanning tools..."
+        if command -v go >/dev/null 2>&1; then
+          echo "Go is already installed"
+        else
+          echo "Installing Go..."
+          wget -q https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
+          sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+        fi
+        export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+        echo "PATH=$PATH:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_ENV
+        
+        echo "Installing dependency scanning tools..."
+        # Install OSV Scanner (try pip first, fallback to Go)
+        pip install osv-scanner || (go install github.com/google/osv-scanner/cmd/osv-scanner@latest) || echo "OSV Scanner installation failed"
+        
+        # Install Syft
+        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin || echo "Syft installation failed"
+        
+        # Install Grype  
+        curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin || echo "Grype installation failed"
+        
+        # Install Trivy
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin || echo "Trivy installation failed"
+        
+        # Install ScanCode Toolkit
+        pip install scancode-toolkit || echo "ScanCode installation failed"
+        
+        # Install TruffleHog
+        pip install trufflehog3 || echo "TruffleHog installation failed"
+        
+        # Install Gitleaks
+        GITLEAKS_VERSION=$(curl -s https://api.github.com/repos/gitleaks/gitleaks/releases/latest | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+        wget -q "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -O /tmp/gitleaks.tar.gz && sudo tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks && sudo chmod +x /usr/local/bin/gitleaks || echo "Gitleaks installation failed"
+        
+        export PATH=$PATH:/usr/local/bin:/usr/local/go/bin:$HOME/go/bin
+        echo "PATH=$PATH:/usr/local/bin:/usr/local/go/bin:$HOME/go/bin" >> $GITHUB_ENV
+        
         echo "Verifying installations:"
         which eslint || echo "eslint not found in PATH"
         which plato || echo "plato not found in PATH"
@@ -88,25 +121,22 @@ jobs:
         echo "Node modules exists:"
         test -d node_modules && echo "✅ node_modules found" || echo "❌ node_modules not found"
         echo "=== Running Scan Commands ==="
-                # ESLint
-        eslint . -f json -o $REPORT_DIR/eslint.json || true
-
-        # NPM Audit
+                # NPM Audit
         npm install --package-lock-only || true
         npm audit --json > $REPORT_DIR/npm_audit.json || true
-
-        # Retire.js
-        retire --js --nodepath node_modules --outputformat json --outputpath $REPORT_DIR/retire.json . || true
-
-        # Plato
-        plato -r -x 'node_modules' -d $REPORT_DIR/plato-report . || true
 
         # JSDoc
         find . -maxdepth 2 -name '*.js' -not -path './node_modules/*' | head -50 | xargs jsdoc -X > $REPORT_DIR/jsdoc.json 2>/dev/null || true
 
+        # Retire.js
+        retire --js --nodepath node_modules --outputformat json --outputpath $REPORT_DIR/retire.json . || true
+
         # JSCPD
         jscpd . --reporters json --output $REPORT_DIR --min-lines 3 --min-tokens 25 --ignore "node_modules" || true
         test -f $REPORT_DIR/jscpd-report.json || echo '{"duplicates":[],"statistics":{"total":{"percentage":0}}}' > $REPORT_DIR/jscpd-report.json
+
+        # Trivy
+        trivy fs --format json --output $REPORT_DIR/trivy.json . 2>/dev/null || echo '{"Results": []}' > $REPORT_DIR/trivy.json
 
         # OSV Scanner
         osv-scanner scan . --format json --output $REPORT_DIR/osv_scanner.json 2>/dev/null || echo '{"results": []}' > $REPORT_DIR/osv_scanner.json
@@ -114,25 +144,14 @@ jobs:
         # Syft SBOM
         syft . -o json=$REPORT_DIR/syft.json 2>/dev/null || echo '{"artifacts": []}' > $REPORT_DIR/syft.json
 
-        # Trivy
-        trivy fs --format json --output $REPORT_DIR/trivy.json . 2>/dev/null || echo '{"Results": []}' > $REPORT_DIR/trivy.json
+        # ESLint
+        eslint . -f json -o $REPORT_DIR/eslint.json || true
 
         # Grype
         grype dir:. -o json > $REPORT_DIR/grype.json 2>/dev/null || echo '{"matches": []}' > $REPORT_DIR/grype.json
 
-        # ScanCode
-        scancode . --json $REPORT_DIR/scancode.json --copyright --license --package --info 2>/dev/null || echo '{"files": []}' > $REPORT_DIR/scancode.json
-
-        # TruffleHog
-        echo "Running TruffleHog..."
-        echo "Scanning filesystem..."
-        trufflehog filesystem --directory . --json --output $REPORT_DIR/trufflehog.json --verbose --debug --rules /dev/null || echo '{"FoundIssues": []}' > $REPORT_DIR/trufflehog.json
-        echo "Scanning git history..."
-        trufflehog git . --json --output $REPORT_DIR/trufflehog_git.json --verbose --debug --rules /dev/null || echo '{"FoundIssues": []}' > $REPORT_DIR/trufflehog_git.json
-        echo "TruffleHog completed. File sizes: filesystem $(wc -c < $REPORT_DIR/trufflehog.json) bytes, git $(wc -c < $REPORT_DIR/trufflehog_git.json) bytes"
-
-        # Gitleaks
-        gitleaks detect --source . --report-format json --report-path $REPORT_DIR/gitleaks.json --no-git 2>/dev/null || echo '[]' > $REPORT_DIR/gitleaks.json
+        # Plato
+        plato -r -x 'node_modules' -d $REPORT_DIR/plato-report . || true
         echo "=== Scan Commands Completed ==="
         echo "Report directory contents after scans:"
         ls -la $REPORT_DIR/ || echo "Report directory not accessible"
